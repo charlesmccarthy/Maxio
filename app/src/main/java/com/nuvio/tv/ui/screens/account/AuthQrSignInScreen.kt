@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -31,11 +35,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -64,6 +73,12 @@ fun AuthQrSignInScreen(
         uiState.qrLoginStatus?.contains("approved", ignoreCase = true) == true
     }
     var onboardingTransitionHandled by remember(isOnboardingMode) { mutableStateOf(false) }
+    var useEmailLogin by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var isSignUp by remember { mutableStateOf(false) }
+    val passwordFocusRequester = remember { FocusRequester() }
+    val submitFocusRequester = remember { FocusRequester() }
 
     BackHandler {
         viewModel.clearQrLoginSession()
@@ -76,8 +91,10 @@ fun AuthQrSignInScreen(
         }
     }
 
-    LaunchedEffect(uiState.authState, isSignedIn, uiState.qrLoginCode, uiState.isLoading) {
+    // Auto-start QR login when not using email mode
+    LaunchedEffect(uiState.authState, isSignedIn, uiState.qrLoginCode, uiState.isLoading, useEmailLogin) {
         if (
+            !useEmailLogin &&
             uiState.authState !is AuthState.Loading &&
             !isSignedIn &&
             uiState.qrLoginCode.isNullOrBlank() &&
@@ -152,6 +169,8 @@ fun AuthQrSignInScreen(
                 Text(
                     text = if (isSignedIn) {
                         stringResource(R.string.auth_qr_connected)
+                    } else if (useEmailLogin) {
+                        "Enter your email and password"
                     } else {
                         stringResource(R.string.auth_qr_phone_hint)
                     },
@@ -198,6 +217,8 @@ fun AuthQrSignInScreen(
                 Text(
                     text = if (isSignedIn) {
                         stringResource(R.string.auth_qr_synced_data)
+                    } else if (useEmailLogin) {
+                        "Sign in with your email"
                     } else {
                         stringResource(R.string.auth_qr_scan_instruction)
                     },
@@ -217,84 +238,82 @@ fun AuthQrSignInScreen(
                         containerColor = NuvioColors.BackgroundCard,
                         contentColor = NuvioColors.TextSecondary
                     )
-                } else {
-                    if (uiState.qrLoginBitmap != null) {
-                        Image(
-                            bitmap = uiState.qrLoginBitmap!!.asImageBitmap(),
-                            contentDescription = "QR login code",
-                            modifier = Modifier
-                                .size(200.dp)
-                                .background(Color.White, RoundedCornerShape(12.dp))
-                                .padding(8.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(200.dp)
-                                .background(NuvioColors.BackgroundCard, RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (uiState.isLoading) stringResource(R.string.auth_qr_generating) else stringResource(R.string.auth_qr_unavailable),
-                                color = NuvioColors.TextSecondary,
-                                textAlign = TextAlign.Center
-                            )
+                } else if (useEmailLogin) {
+                    // Email/password login form
+                    EmailLoginForm(
+                        email = email,
+                        onEmailChange = { email = it },
+                        password = password,
+                        onPasswordChange = { password = it },
+                        isSignUp = isSignUp,
+                        isLoading = uiState.isLoading,
+                        error = uiState.error,
+                        qrLoginStatus = uiState.qrLoginStatus,
+                        passwordFocusRequester = passwordFocusRequester,
+                        submitFocusRequester = submitFocusRequester,
+                        onSubmit = {
+                            if (email.isNotBlank() && password.isNotBlank()) {
+                                if (isSignUp) viewModel.signUp(email.trim(), password)
+                                else viewModel.signIn(email.trim(), password)
+                            }
                         }
-                    }
-
-                    if (!uiState.qrLoginCode.isNullOrBlank()) {
-                        Text(
-                            text = stringResource(R.string.auth_qr_code_display, uiState.qrLoginCode!!),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NuvioColors.TextPrimary,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    if (uiState.qrLoginExpiresAtMillis != null) {
-                        Text(
-                            text = stringResource(R.string.auth_qr_expires, formatDuration(remainingMillis)),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = NuvioColors.TextSecondary
-                        )
-                    }
-
-                    val statusText = uiState.error ?: uiState.qrLoginStatus
-                    if (!statusText.isNullOrBlank()) {
-                        StatusPill(
-                            text = statusText,
-                            containerColor = if (uiState.error != null) Color(0x33C62828) else NuvioColors.BackgroundCard,
-                            contentColor = if (uiState.error != null) Color(0xFFFF6E6E) else NuvioColors.TextSecondary
-                        )
-                    }
+                    )
+                } else {
+                    // QR code display
+                    QrCodeSection(
+                        qrBitmap = uiState.qrLoginBitmap,
+                        qrCode = uiState.qrLoginCode,
+                        remainingMillis = remainingMillis,
+                        isLoading = uiState.isLoading,
+                        error = uiState.error,
+                        qrLoginStatus = uiState.qrLoginStatus,
+                        onRefresh = { viewModel.startQrLogin() }
+                    )
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = {
-                            if (isSignedIn) {
-                                viewModel.signOut()
-                            } else {
-                                viewModel.startQrLogin()
+                    if (!isSignedIn) {
+                        if (useEmailLogin) {
+                            Button(
+                                onClick = { isSignUp = !isSignUp },
+                                colors = ButtonDefaults.colors(
+                                    containerColor = NuvioColors.BackgroundCard,
+                                    focusedContainerColor = Color.White,
+                                    contentColor = NuvioColors.TextPrimary,
+                                    focusedContentColor = Color.Black
+                                )
+                            ) {
+                                Text(if (isSignUp) "Already have an account?" else "Create new account")
                             }
-                        },
-                        enabled = !uiState.isLoading,
-                        colors = ButtonDefaults.colors(
-                            containerColor = NuvioColors.BackgroundCard,
-                            focusedContainerColor = Color.White,
-                            contentColor = NuvioColors.TextPrimary,
-                            focusedContentColor = Color.Black,
-                            disabledContainerColor = NuvioColors.BackgroundCard.copy(alpha = 0.55f)
-                        )
-                    ) {
-                        Text(
-                            when {
-                                isSignedIn -> stringResource(R.string.account_sign_out)
-                                uiState.isLoading -> stringResource(R.string.auth_qr_please_wait)
-                                else -> stringResource(R.string.auth_qr_refresh)
-                            }
-                        )
+                        }
+                        Button(
+                            onClick = {
+                                useEmailLogin = !useEmailLogin
+                                if (!useEmailLogin) viewModel.startQrLogin()
+                            },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NuvioColors.BackgroundCard,
+                                focusedContainerColor = Color.White,
+                                contentColor = NuvioColors.TextPrimary,
+                                focusedContentColor = Color.Black
+                            )
+                        ) {
+                            Text(if (useEmailLogin) "Use QR code" else "Use email instead")
+                        }
+                    }
+                    if (isSignedIn) {
+                        Button(
+                            onClick = { viewModel.signOut() },
+                            colors = ButtonDefaults.colors(
+                                containerColor = NuvioColors.BackgroundCard,
+                                focusedContainerColor = Color.White,
+                                contentColor = NuvioColors.TextPrimary,
+                                focusedContentColor = Color.Black
+                            )
+                        ) {
+                            Text(stringResource(R.string.account_sign_out))
+                        }
                     }
                     Button(
                         onClick = {
@@ -326,6 +345,185 @@ fun AuthQrSignInScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QrCodeSection(
+    qrBitmap: android.graphics.Bitmap?,
+    qrCode: String?,
+    remainingMillis: Long,
+    isLoading: Boolean,
+    error: String?,
+    qrLoginStatus: String?,
+    onRefresh: () -> Unit
+) {
+    if (qrBitmap != null) {
+        Box(
+            modifier = Modifier
+                .size(200.dp)
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                bitmap = qrBitmap.asImageBitmap(),
+                contentDescription = "QR Code",
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    } else if (!isLoading) {
+        Box(
+            modifier = Modifier
+                .size(200.dp)
+                .background(NuvioColors.BackgroundCard, RoundedCornerShape(12.dp))
+                .border(1.dp, NuvioColors.Border, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "QR unavailable",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NuvioColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = onRefresh,
+                    colors = ButtonDefaults.colors(
+                        containerColor = NuvioColors.Secondary,
+                        focusedContainerColor = NuvioColors.SecondaryVariant
+                    )
+                ) {
+                    Text("Retry")
+                }
+            }
+        }
+    }
+
+    if (!qrCode.isNullOrBlank()) {
+        Text(
+            text = "Code: $qrCode",
+            style = MaterialTheme.typography.titleMedium,
+            color = NuvioColors.TextPrimary,
+            fontWeight = FontWeight.Bold
+        )
+        if (remainingMillis > 0) {
+            Text(
+                text = "Expires in ${formatDuration(remainingMillis)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = NuvioColors.TextSecondary
+            )
+        }
+    }
+
+    val statusText = error ?: qrLoginStatus
+    if (!statusText.isNullOrBlank()) {
+        StatusPill(
+            text = statusText,
+            containerColor = if (error != null) Color(0x33C62828) else NuvioColors.BackgroundCard,
+            contentColor = if (error != null) Color(0xFFFF6E6E) else NuvioColors.TextSecondary
+        )
+    }
+}
+
+@Composable
+private fun EmailLoginForm(
+    email: String,
+    onEmailChange: (String) -> Unit,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    isSignUp: Boolean,
+    isLoading: Boolean,
+    error: String?,
+    qrLoginStatus: String?,
+    passwordFocusRequester: FocusRequester,
+    submitFocusRequester: FocusRequester,
+    onSubmit: () -> Unit
+) {
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = NuvioColors.TextPrimary,
+        cursorColor = NuvioColors.Secondary,
+        focusedBorderColor = NuvioColors.Secondary,
+        unfocusedBorderColor = NuvioColors.Border,
+        focusedLabelColor = NuvioColors.Secondary,
+        unfocusedLabelColor = NuvioColors.TextSecondary
+    )
+
+    OutlinedTextField(
+        value = email,
+        onValueChange = onEmailChange,
+        label = { androidx.compose.material3.Text("Email") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Email,
+            imeAction = ImeAction.Next
+        ),
+        keyboardActions = KeyboardActions(
+            onNext = { passwordFocusRequester.requestFocus() }
+        ),
+        colors = textFieldColors,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    OutlinedTextField(
+        value = password,
+        onValueChange = onPasswordChange,
+        label = { androidx.compose.material3.Text("Password") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { submitFocusRequester.requestFocus() }
+        ),
+        colors = textFieldColors,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(passwordFocusRequester)
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Button(
+        onClick = onSubmit,
+        enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
+        colors = ButtonDefaults.colors(
+            containerColor = NuvioColors.Secondary,
+            focusedContainerColor = NuvioColors.SecondaryVariant,
+            contentColor = NuvioColors.OnSecondary,
+            focusedContentColor = NuvioColors.OnSecondaryVariant,
+            disabledContainerColor = NuvioColors.BackgroundCard.copy(alpha = 0.55f)
+        ),
+        shape = ButtonDefaults.shape(RoundedCornerShape(50)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(submitFocusRequester)
+    ) {
+        Text(
+            text = when {
+                isLoading -> "Please wait..."
+                isSignUp -> "Create Account"
+                else -> "Sign In"
+            },
+            modifier = Modifier.padding(vertical = 4.dp),
+            fontWeight = FontWeight.Medium
+        )
+    }
+
+    val statusText = error ?: qrLoginStatus
+    if (!statusText.isNullOrBlank()) {
+        StatusPill(
+            text = statusText,
+            containerColor = if (error != null) Color(0x33C62828) else NuvioColors.BackgroundCard,
+            contentColor = if (error != null) Color(0xFFFF6E6E) else NuvioColors.TextSecondary
+        )
     }
 }
 

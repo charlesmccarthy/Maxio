@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Nuvio</string>
+    <string name="app_name">Maxio</string>
     <string name="type_movie">Película</string>
     <string name="type_series">Serie</string>
     <string name="type_unknown">Desconocido</string>

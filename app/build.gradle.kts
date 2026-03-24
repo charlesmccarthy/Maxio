@@ -63,8 +63,8 @@ android {
         buildConfigField("String", "AVATAR_PUBLIC_BASE_URL", "\"${localProperties.getProperty("AVATAR_PUBLIC_BASE_URL", "")}\"")
 
         // In-app updater (GitHub Releases)
-        buildConfigField("String", "GITHUB_OWNER", "\"tapframe\"")
-        buildConfigField("String", "GITHUB_REPO", "\"NuvioTV\"")
+        buildConfigField("String", "GITHUB_OWNER", "\"charlesmccarthy\"")
+        buildConfigField("String", "GITHUB_REPO", "\"Maxio\"")
     }
 
     signingConfigs {
@@ -187,7 +187,7 @@ android {
 
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
-        variant.applicationId.set("com.nuviodebug.com")
+        variant.applicationId.set("com.maxio.tv.debug")
     }
 }
 
