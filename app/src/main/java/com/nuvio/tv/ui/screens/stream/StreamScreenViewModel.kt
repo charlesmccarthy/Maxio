@@ -281,7 +281,7 @@ class StreamScreenViewModel @Inject constructor(
 
                     updateUiStateIfChanged {
                         it.copy(
-                            isLoading = !isAllLoaded,
+                            isLoading = false,
                             addonStreams = orderedAddonStreams,
                             allStreams = allStreams,
                             filteredStreams = filteredStreams,
