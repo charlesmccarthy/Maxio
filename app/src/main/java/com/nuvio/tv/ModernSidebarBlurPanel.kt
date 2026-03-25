@@ -242,8 +242,16 @@ private fun SidebarNavigationItem(
         label = "sidebarItemBorder"
     )
 
-    val contentColor = if (selected) Color(0xFF10151F) else Color.White
-    val iconCircleColor = if (selected) Color(0xFFE7E2EF) else Color(0xFF6A6A74)
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) Color(0xFF10151F) else Color.White,
+        animationSpec = tween(durationMillis = 180),
+        label = "sidebarItemContentColor"
+    )
+    val iconCircleColor by animateColorAsState(
+        targetValue = if (selected) Color(0xFFE7E2EF) else Color(0xFF6A6A74),
+        animationSpec = tween(durationMillis = 180),
+        label = "sidebarItemIconCircleColor"
+    )
     Row(
         modifier = modifier
             .clip(shape)

@@ -346,8 +346,8 @@ class DiscoveryViewModel @Inject constructor(
                     apiKey = TMDB_API_KEY,
                     language = language,
                     sortBy = "vote_average.desc",
-                    releaseDateGte = "$startYear-01-01",
-                    releaseDateLte = "$endYear-12-31",
+                    primaryReleaseDateGte = "$startYear-01-01",
+                    primaryReleaseDateLte = "$endYear-12-31",
                     voteCountGte = 500
                 )
             } else {

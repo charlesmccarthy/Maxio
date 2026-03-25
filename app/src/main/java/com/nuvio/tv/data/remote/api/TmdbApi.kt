@@ -162,6 +162,8 @@ interface TmdbApi {
         @Query("with_companies") withCompanies: String? = null,
         @Query("release_date.lte") releaseDateLte: String? = null,
         @Query("release_date.gte") releaseDateGte: String? = null,
+        @Query("primary_release_date.gte") primaryReleaseDateGte: String? = null,
+        @Query("primary_release_date.lte") primaryReleaseDateLte: String? = null,
         @Query("vote_count.gte") voteCountGte: Int? = null,
         @Query("vote_average.gte") voteAverageGte: Double? = null,
         @Query("with_genres") withGenres: String? = null,

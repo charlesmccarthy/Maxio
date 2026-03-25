@@ -108,9 +108,11 @@ class DiscoveryBrowseViewModel @Inject constructor(
     }
 
     private fun loadPage(page: Int) {
-        loadJob?.cancel()
+        val isFirstPage = page == 1
+        if (isFirstPage) loadJob?.cancel()
+        if (!isFirstPage && (loadJob?.isActive == true)) return
+
         loadJob = viewModelScope.launch(Dispatchers.IO) {
-            val isFirstPage = page == 1
             _uiState.update {
                 if (isFirstPage) it.copy(isLoading = true, error = null, items = emptyList())
                 else it.copy(isLoadingMore = true)
@@ -130,8 +132,10 @@ class DiscoveryBrowseViewModel @Inject constructor(
                 val (results, totalPages) = response
 
                 _uiState.update {
+                    val existingIds = if (isFirstPage) emptySet() else it.items.map { item -> item.id }.toSet()
+                    val deduped = results.filter { item -> item.id !in existingIds }
                     it.copy(
-                        items = if (isFirstPage) results else it.items + results,
+                        items = if (isFirstPage) deduped else it.items + deduped,
                         currentPage = page,
                         hasMorePages = page < totalPages,
                         isLoading = false,
@@ -198,8 +202,8 @@ class DiscoveryBrowseViewModel @Inject constructor(
                 language = language,
                 page = page,
                 sortBy = "vote_average.desc",
-                releaseDateGte = "$startYear-01-01",
-                releaseDateLte = "$endYear-12-31",
+                primaryReleaseDateGte = "$startYear-01-01",
+                primaryReleaseDateLte = "$endYear-12-31",
                 voteCountGte = 300
             )
         } else {
