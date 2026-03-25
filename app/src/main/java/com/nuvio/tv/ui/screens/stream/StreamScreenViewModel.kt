@@ -251,6 +251,9 @@ class StreamScreenViewModel @Inject constructor(
                 val prefetchAddons = addonRepository.getInstalledAddons().first()
                 val prefetchAddonOrder = prefetchAddons.map { it.displayName }
 
+                // Initialize source chips so all addons show as loading placeholders
+                updateSourceChipsForFetchStart(prefetchAddons)
+
                 fun applyPrefetchSuccess(addonStreamGroups: List<AddonStreams>, isAllLoaded: Boolean) {
                     val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(addonStreamGroups, prefetchAddonOrder)
                     val allStreams = orderedAddonStreams.flatMap { it.streams }
@@ -268,13 +271,25 @@ class StreamScreenViewModel @Inject constructor(
                             selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins
                         )
                     }
+
+                    val currentFilter = _uiState.value.selectedAddonFilter
+                    val filteredStreams = if (currentFilter == null) {
+                        allStreams
+                    } else {
+                        allStreams.filter { it.addonName == currentFilter }
+                    }
+
                     updateUiStateIfChanged {
                         it.copy(
-                            isLoading = false,
+                            isLoading = !isAllLoaded,
                             addonStreams = orderedAddonStreams,
                             allStreams = allStreams,
-                            filteredStreams = allStreams,
+                            filteredStreams = filteredStreams,
                             availableAddons = availableAddons,
+                            sourceChips = mergeSourceChipStatuses(
+                                existing = _uiState.value.sourceChips,
+                                succeededNames = orderedAddonStreams.map { a -> a.addonName }
+                            ),
                             autoPlayStream = selectedAutoPlayStream,
                             error = null,
                             showDirectAutoPlayOverlay = directAutoPlayFlowEnabledForSession
@@ -287,19 +302,34 @@ class StreamScreenViewModel @Inject constructor(
                     streamPrefetchCache.clear()
                     return@launch
                 } else {
-                    // Partial results available — show them and continue collecting
+                    // Partial results — show them and keep collecting until prefetch finishes
                     applyPrefetchSuccess(prefetched.addonStreams, isAllLoaded = false)
-                    streamPrefetchCache.streamFlow.collect { result ->
-                        when (result) {
-                            is NetworkResult.Success -> applyPrefetchSuccess(result.data, isAllLoaded = false)
-                            is NetworkResult.Error -> { /* ignore errors from prefetch, keep showing partial results */ }
-                            NetworkResult.Loading -> { /* no-op */ }
+                    try {
+                        kotlinx.coroutines.withTimeout(30_000L) {
+                            streamPrefetchCache.streamFlow.collect { result ->
+                                when (result) {
+                                    is NetworkResult.Success -> {
+                                        applyPrefetchSuccess(result.data, isAllLoaded = false)
+                                        // Check if prefetch is now complete
+                                        val current = streamPrefetchCache.getIfMatch(videoId, contentType, season, episode)
+                                        if (current?.isComplete == true) {
+                                            applyPrefetchSuccess(current.addonStreams, isAllLoaded = true)
+                                            throw kotlinx.coroutines.CancellationException("Prefetch complete")
+                                        }
+                                    }
+                                    is NetworkResult.Error -> { /* keep showing partial results */ }
+                                    NetworkResult.Loading -> { /* no-op */ }
+                                }
+                            }
                         }
+                    } catch (_: kotlinx.coroutines.CancellationException) {
+                        // Expected — prefetch completed or timed out
+                    } catch (_: Exception) {
+                        // Timeout or other error — finalize with what we have
                     }
-                    // Flow ended — all addons finished
-                    val final = streamPrefetchCache.getIfMatch(videoId, contentType, season, episode)
-                    if (final != null) {
-                        applyPrefetchSuccess(final.addonStreams, isAllLoaded = true)
+                    val finalEntry = streamPrefetchCache.getIfMatch(videoId, contentType, season, episode)
+                    if (finalEntry != null && finalEntry.addonStreams.isNotEmpty()) {
+                        applyPrefetchSuccess(finalEntry.addonStreams, isAllLoaded = true)
                     }
                     streamPrefetchCache.clear()
                     return@launch
