@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.R
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.stream.StreamPrefetchCache
 import com.nuvio.tv.core.player.StreamAutoPlayPolicy
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
 import com.nuvio.tv.data.local.PlayerPreference
@@ -50,6 +51,7 @@ class StreamScreenViewModel @Inject constructor(
     private val metaRepository: MetaRepository,
     private val playerSettingsDataStore: PlayerSettingsDataStore,
     private val streamLinkCacheDataStore: StreamLinkCacheDataStore,
+    private val streamPrefetchCache: StreamPrefetchCache,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private var autoPlayHandledForSession = false
@@ -239,6 +241,68 @@ class StreamScreenViewModel @Inject constructor(
                             )
                         )
                     }
+                }
+            }
+
+            // Check stream prefetch cache from detail page
+            val prefetched = streamPrefetchCache.getIfMatch(videoId, contentType, season, episode)
+            if (prefetched != null && prefetched.addonStreams.isNotEmpty()) {
+                Log.d(TAG, "Using prefetched streams (complete=${prefetched.isComplete}, count=${prefetched.addonStreams.size})")
+                val prefetchAddons = addonRepository.getInstalledAddons().first()
+                val prefetchAddonOrder = prefetchAddons.map { it.displayName }
+
+                fun applyPrefetchSuccess(addonStreamGroups: List<AddonStreams>, isAllLoaded: Boolean) {
+                    val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(addonStreamGroups, prefetchAddonOrder)
+                    val allStreams = orderedAddonStreams.flatMap { it.streams }
+                    val availableAddons = orderedAddonStreams.map { it.addonName }
+                    val selectedAutoPlayStream = if (autoPlayHandledForSession || !isAllLoaded) {
+                        null
+                    } else {
+                        StreamAutoPlaySelector.selectAutoPlayStream(
+                            streams = allStreams,
+                            mode = playerSettings.streamAutoPlayMode,
+                            regexPattern = playerSettings.streamAutoPlayRegex,
+                            source = playerSettings.streamAutoPlaySource,
+                            installedAddonNames = prefetchAddonOrder.toSet(),
+                            selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
+                            selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins
+                        )
+                    }
+                    updateUiStateIfChanged {
+                        it.copy(
+                            isLoading = false,
+                            addonStreams = orderedAddonStreams,
+                            allStreams = allStreams,
+                            filteredStreams = allStreams,
+                            availableAddons = availableAddons,
+                            autoPlayStream = selectedAutoPlayStream,
+                            error = null,
+                            showDirectAutoPlayOverlay = directAutoPlayFlowEnabledForSession
+                        )
+                    }
+                }
+
+                if (prefetched.isComplete) {
+                    applyPrefetchSuccess(prefetched.addonStreams, isAllLoaded = true)
+                    streamPrefetchCache.clear()
+                    return@launch
+                } else {
+                    // Partial results available — show them and continue collecting
+                    applyPrefetchSuccess(prefetched.addonStreams, isAllLoaded = false)
+                    streamPrefetchCache.streamFlow.collect { result ->
+                        when (result) {
+                            is NetworkResult.Success -> applyPrefetchSuccess(result.data, isAllLoaded = false)
+                            is NetworkResult.Error -> { /* ignore errors from prefetch, keep showing partial results */ }
+                            NetworkResult.Loading -> { /* no-op */ }
+                        }
+                    }
+                    // Flow ended — all addons finished
+                    val final = streamPrefetchCache.getIfMatch(videoId, contentType, season, episode)
+                    if (final != null) {
+                        applyPrefetchSuccess(final.addonStreams, isAllLoaded = true)
+                    }
+                    streamPrefetchCache.clear()
+                    return@launch
                 }
             }
 

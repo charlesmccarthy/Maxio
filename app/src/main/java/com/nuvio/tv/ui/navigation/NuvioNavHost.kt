@@ -44,6 +44,8 @@ import com.nuvio.tv.ui.screens.account.AuthQrSignInScreen
 import com.nuvio.tv.ui.screens.cast.CastDetailScreen
 import com.nuvio.tv.ui.screens.profile.ProfileSelectionMode
 import com.nuvio.tv.ui.screens.profile.ProfileSelectionScreen
+import com.nuvio.tv.ui.screens.discovery.DiscoveryBrowseScreen
+import com.nuvio.tv.ui.screens.discovery.DiscoveryScreen
 import com.nuvio.tv.ui.screens.tmdb.TmdbEntityBrowseScreen
 
 @Composable
@@ -1003,6 +1005,39 @@ fun NuvioNavHost(
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 }
+            )
+        }
+
+        composable(route = Screen.Discovery.route) {
+            DiscoveryScreen(
+                onNavigateToDetail = { itemId, itemType ->
+                    navController.navigate(Screen.Detail.createRoute(itemId, itemType))
+                },
+                onNavigateToDiscoveryBrowse = { browseType, browseValue, browseName, contentType ->
+                    navController.navigate(
+                        Screen.DiscoveryBrowse.createRoute(browseType, browseValue, browseName, contentType)
+                    )
+                }
+            )
+        }
+
+        composable(
+            route = Screen.DiscoveryBrowse.route,
+            arguments = listOf(
+                navArgument("browseType") { type = NavType.StringType },
+                navArgument("browseValue") { type = NavType.StringType },
+                navArgument("browseName") { type = NavType.StringType },
+                navArgument("contentType") {
+                    type = NavType.StringType
+                    defaultValue = "movie"
+                }
+            )
+        ) {
+            DiscoveryBrowseScreen(
+                onNavigateToDetail = { itemId, itemType ->
+                    navController.navigate(Screen.Detail.createRoute(itemId, itemType))
+                },
+                onBackPress = { navController.popBackStack() }
             )
         }
 

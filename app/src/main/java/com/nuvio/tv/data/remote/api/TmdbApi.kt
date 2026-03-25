@@ -161,7 +161,12 @@ interface TmdbApi {
         @Query("sort_by") sortBy: String? = null,
         @Query("with_companies") withCompanies: String? = null,
         @Query("release_date.lte") releaseDateLte: String? = null,
-        @Query("vote_count.gte") voteCountGte: Int? = null
+        @Query("release_date.gte") releaseDateGte: String? = null,
+        @Query("vote_count.gte") voteCountGte: Int? = null,
+        @Query("vote_average.gte") voteAverageGte: Double? = null,
+        @Query("with_genres") withGenres: String? = null,
+        @Query("with_runtime.gte") withRuntimeGte: Int? = null,
+        @Query("with_runtime.lte") withRuntimeLte: Int? = null
     ): Response<TmdbDiscoverResponse>
 
     @GET("discover/tv")
@@ -173,8 +178,32 @@ interface TmdbApi {
         @Query("with_companies") withCompanies: String? = null,
         @Query("with_networks") withNetworks: String? = null,
         @Query("first_air_date.lte") firstAirDateLte: String? = null,
-        @Query("vote_count.gte") voteCountGte: Int? = null
+        @Query("first_air_date.gte") firstAirDateGte: String? = null,
+        @Query("vote_count.gte") voteCountGte: Int? = null,
+        @Query("vote_average.gte") voteAverageGte: Double? = null,
+        @Query("with_genres") withGenres: String? = null
     ): Response<TmdbDiscoverResponse>
+
+    @GET("trending/{media_type}/{time_window}")
+    suspend fun getTrending(
+        @Path("media_type") mediaType: String,
+        @Path("time_window") timeWindow: String,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null,
+        @Query("page") page: Int = 1
+    ): Response<TmdbDiscoverResponse>
+
+    @GET("genre/movie/list")
+    suspend fun getMovieGenres(
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null
+    ): Response<TmdbGenreListResponse>
+
+    @GET("genre/tv/list")
+    suspend fun getTvGenres(
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null
+    ): Response<TmdbGenreListResponse>
 }
 
 @JsonClass(generateAdapter = true)
@@ -507,4 +536,9 @@ data class TmdbNetworkDetailsResponse(
     @Json(name = "homepage") val homepage: String? = null,
     @Json(name = "logo_path") val logoPath: String? = null,
     @Json(name = "origin_country") val originCountry: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbGenreListResponse(
+    @Json(name = "genres") val genres: List<TmdbGenre> = emptyList()
 )

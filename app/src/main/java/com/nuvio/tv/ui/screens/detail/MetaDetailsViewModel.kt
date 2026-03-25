@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.player.StreamAutoPlayPolicy
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.stream.StreamPrefetchCache
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
@@ -29,6 +30,7 @@ import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.repository.LibraryRepository
 import com.nuvio.tv.domain.repository.MetaRepository
+import com.nuvio.tv.domain.repository.StreamRepository
 import com.nuvio.tv.domain.repository.WatchProgressRepository
 import com.nuvio.tv.data.local.WatchedItemsPreferences
 import com.nuvio.tv.data.local.TrailerSettingsDataStore
@@ -79,6 +81,8 @@ class MetaDetailsViewModel @Inject constructor(
     private val traktSettingsDataStore: TraktSettingsDataStore,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val playerSettingsDataStore: PlayerSettingsDataStore,
+    private val streamRepository: StreamRepository,
+    private val streamPrefetchCache: StreamPrefetchCache,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val itemId: String = savedStateHandle["itemId"] ?: ""
@@ -98,6 +102,7 @@ class MetaDetailsViewModel @Inject constructor(
     private var episodeRatingsJob: Job? = null
     private var nextToWatchJob: Job? = null
     private var commentsJob: Job? = null
+    private var streamPrefetchJob: Job? = null
 
     private var trailerDelayMs = 7000L
     private var trailerAutoplayEnabled = false
@@ -556,6 +561,47 @@ class MetaDetailsViewModel @Inject constructor(
         // Episode ratings and MDBList are independent — launch both without waiting.
         loadEpisodeRatingsAsync(enriched)
         viewModelScope.launch { loadMDBListRatings(enriched) }
+        // Prefetch streams so Play is near-instant
+        startStreamPrefetch(enriched)
+    }
+
+    private fun startStreamPrefetch(meta: Meta) {
+        streamPrefetchJob?.cancel()
+        val videoId = meta.id.takeIf { it.isNotBlank() } ?: return
+        val contentType = itemType.takeIf { it.isNotBlank() } ?: return
+        // For series, determine the next-to-watch video to prefetch the right episode
+        val season: Int?
+        val episode: Int?
+        val prefetchVideoId: String
+        if (contentType.equals("series", ignoreCase = true)) {
+            val ntw = _uiState.value.nextToWatch
+            val ntwSeason = ntw?.nextSeason
+            val ntwEpisode = ntw?.nextEpisode
+            if (ntwSeason != null && ntwEpisode != null) {
+                season = ntwSeason
+                episode = ntwEpisode
+                prefetchVideoId = "$videoId:$season:$episode"
+            } else {
+                // No next-to-watch yet — skip prefetch until episode is known
+                return
+            }
+        } else {
+            season = null
+            episode = null
+            prefetchVideoId = videoId
+        }
+        streamPrefetchCache.startPrefetch(prefetchVideoId, contentType, season, episode)
+        streamPrefetchJob = viewModelScope.launch(Dispatchers.IO) {
+            streamRepository.getStreamsFromAllAddons(
+                type = contentType,
+                videoId = prefetchVideoId,
+                season = season,
+                episode = episode
+            ).collect { result ->
+                streamPrefetchCache.emitResult(result)
+            }
+            streamPrefetchCache.markComplete()
+        }
     }
 
     private fun loadComments(meta: Meta, forceRefresh: Boolean = false) {

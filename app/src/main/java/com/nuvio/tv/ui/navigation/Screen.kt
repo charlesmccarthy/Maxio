@@ -161,6 +161,22 @@ sealed class Screen(val route: String) {
         }
     }
 
+    data object Discovery : Screen("discovery")
+
+    data object DiscoveryBrowse : Screen("discovery_browse/{browseType}/{browseValue}/{browseName}?contentType={contentType}") {
+        private fun encode(value: String): String =
+            URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+        fun createRoute(
+            browseType: String,
+            browseValue: String,
+            browseName: String,
+            contentType: String = "movie"
+        ): String {
+            return "discovery_browse/${encode(browseType)}/${encode(browseValue)}/${encode(browseName)}?contentType=${encode(contentType)}"
+        }
+    }
+
     data object TmdbEntityBrowse : Screen(
         "tmdb_entity_browse/{entityKind}/{entityId}/{entityName}?sourceType={sourceType}"
     ) {

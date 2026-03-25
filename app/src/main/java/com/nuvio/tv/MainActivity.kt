@@ -49,6 +49,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
@@ -402,6 +403,7 @@ class MainActivity : ComponentActivity() {
                         setOf(
                             Screen.Home.route,
                             Screen.Search.route,
+                            Screen.Discovery.route,
                             Screen.Library.route,
                             Screen.Settings.route,
                             Screen.AddonManager.route
@@ -410,12 +412,14 @@ class MainActivity : ComponentActivity() {
 
                     val strNavHome = stringResource(R.string.nav_home)
                     val strNavSearch = stringResource(R.string.nav_search)
+                    val strNavDiscover = stringResource(R.string.nav_discover)
                     val strNavLibrary = stringResource(R.string.nav_library)
                     val strNavAddons = stringResource(R.string.nav_addons)
                     val strNavSettings = stringResource(R.string.nav_settings)
                     val drawerItems = remember(
                         strNavHome,
                         strNavSearch,
+                        strNavDiscover,
                         strNavLibrary,
                         strNavAddons,
                         strNavSettings
@@ -430,6 +434,11 @@ class MainActivity : ComponentActivity() {
                                 route = Screen.Search.route,
                                 label = strNavSearch,
                                 iconRes = R.raw.sidebar_search
+                            ),
+                            DrawerItem(
+                                route = Screen.Discovery.route,
+                                label = strNavDiscover,
+                                icon = Icons.Default.Explore
                             ),
                             DrawerItem(
                                 route = Screen.Library.route,
