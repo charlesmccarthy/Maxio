@@ -41,11 +41,15 @@ enum class LibrarySortOption(
     ADDED_DESC("added_desc", R.string.library_sort_added_desc),
     ADDED_ASC("added_asc", R.string.library_sort_added_asc),
     TITLE_ASC("title_asc", R.string.library_sort_title_asc),
-    TITLE_DESC("title_desc", R.string.library_sort_title_desc);
+    TITLE_DESC("title_desc", R.string.library_sort_title_desc),
+    YEAR_ASC("year_asc", R.string.library_sort_year_asc),
+    YEAR_DESC("year_desc", R.string.library_sort_year_desc),
+    RANDOM("random", R.string.library_sort_random);
 
     companion object {
-        val TraktOptions = listOf(DEFAULT, ADDED_DESC, ADDED_ASC, TITLE_ASC, TITLE_DESC)
-        val LocalOptions = listOf(ADDED_DESC, ADDED_ASC, TITLE_ASC, TITLE_DESC)
+        val TraktOptions = listOf(DEFAULT, ADDED_DESC, ADDED_ASC, TITLE_ASC, TITLE_DESC, YEAR_ASC, YEAR_DESC, RANDOM)
+        val LocalOptions = listOf(ADDED_DESC, ADDED_ASC, TITLE_ASC, TITLE_DESC, YEAR_ASC, YEAR_DESC, RANDOM)
+        fun fromKey(key: String): LibrarySortOption? = entries.find { it.key == key }
     }
 }
 
@@ -101,6 +105,16 @@ class LibraryViewModel @Inject constructor(
         observeLibraryData()
     }
 
+    fun onScreenEntered() {
+        _uiState.update { current ->
+            if (current.selectedSortOption == LibrarySortOption.RANDOM) {
+                current.withVisibleItems()
+            } else {
+                current
+            }
+        }
+    }
+
     fun onSelectTypeTab(tab: LibraryTypeTab) {
         _uiState.update { current ->
             val updated = current.copy(selectedTypeTab = tab)
@@ -127,6 +141,9 @@ class LibraryViewModel @Inject constructor(
                 sortSelectionVersion = nextVersion
             )
             updated.withVisibleItems()
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setLibrarySortOption(option.key)
         }
     }
 
@@ -367,24 +384,36 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    private var sortPreferenceLoaded = false
+
     private fun observeLayoutPreferences() {
         viewModelScope.launch {
             combine(
                 layoutPreferenceDataStore.posterCardWidthDp,
-                layoutPreferenceDataStore.posterCardCornerRadiusDp
-            ) { widthDp, cornerRadiusDp ->
-                widthDp to cornerRadiusDp
-            }.collectLatest { (widthDp, cornerRadiusDp) ->
+                layoutPreferenceDataStore.posterCardCornerRadiusDp,
+                layoutPreferenceDataStore.librarySortOption
+            ) { widthDp, cornerRadiusDp, sortKey ->
+                Triple(widthDp, cornerRadiusDp, sortKey)
+            }.collectLatest { triple ->
+                val widthDp = triple.first
+                val cornerRadiusDp = triple.second
+                val sortKey = triple.third
+                val savedSort = sortKey?.let { LibrarySortOption.fromKey(it) }
                 _uiState.update { current ->
+                    val applySort = savedSort != null && !sortPreferenceLoaded
+                    if (applySort) sortPreferenceLoaded = true
                     if (current.posterCardWidthDp == widthDp &&
-                        current.posterCardCornerRadiusDp == cornerRadiusDp
+                        current.posterCardCornerRadiusDp == cornerRadiusDp &&
+                        !applySort
                     ) {
                         current
                     } else {
-                        current.copy(
+                        val updated = current.copy(
                             posterCardWidthDp = widthDp,
-                            posterCardCornerRadiusDp = cornerRadiusDp
+                            posterCardCornerRadiusDp = cornerRadiusDp,
+                            selectedSortOption = if (applySort) savedSort!! else current.selectedSortOption
                         )
+                        if (applySort) updated.withVisibleItems() else updated
                     }
                 }
             }
@@ -526,6 +555,17 @@ class LibraryViewModel @Inject constructor(
                 compareByDescending<LibraryEntry> { it.name.ifBlank { it.id }.lowercase(Locale.ROOT) }
                     .thenBy { it.id }
             )
+            LibrarySortOption.YEAR_ASC -> listFiltered.sortedWith(
+                compareBy<LibraryEntry> { it.releaseInfo?.take(4)?.toIntOrNull() ?: Int.MAX_VALUE }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name.ifBlank { it.id } }
+                    .thenBy { it.id }
+            )
+            LibrarySortOption.YEAR_DESC -> listFiltered.sortedWith(
+                compareByDescending<LibraryEntry> { it.releaseInfo?.take(4)?.toIntOrNull() ?: 0 }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name.ifBlank { it.id } }
+                    .thenBy { it.id }
+            )
+            LibrarySortOption.RANDOM -> listFiltered.shuffled()
         }
 
         return copy(visibleItems = sorted)

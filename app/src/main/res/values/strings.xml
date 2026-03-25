@@ -916,6 +916,9 @@
     <string name="library_sort_added_asc">Added ↑</string>
     <string name="library_sort_title_asc">Title A-Z</string>
     <string name="library_sort_title_desc">Title Z-A</string>
+    <string name="library_sort_year_asc">Year ↑</string>
+    <string name="library_sort_year_desc">Year ↓</string>
+    <string name="library_sort_random">Random</string>
     <string name="library_manage_lists">Manage Lists</string>
     <string name="library_manage_trakt_lists">Manage Trakt Lists</string>
     <string name="library_no_lists">No personal lists yet.</string>

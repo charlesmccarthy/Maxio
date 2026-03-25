@@ -64,6 +64,7 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val preferExternalMetaAddonDetailKey = booleanPreferencesKey("prefer_external_meta_addon_detail")
     private val hideUnreleasedContentKey = booleanPreferencesKey("hide_unreleased_content")
     private val showFullReleaseDateKey = booleanPreferencesKey("show_full_release_date")
+    private val librarySortKey = stringPreferencesKey("library_sort_option")
 
     private fun <T> profileFlow(extract: (prefs: androidx.datastore.preferences.core.Preferences) -> T): Flow<T> =
         profileManager.activeProfileId.flatMapLatest { pid ->
@@ -206,6 +207,16 @@ class LayoutPreferenceDataStore @Inject constructor(
 
     val showFullReleaseDate: Flow<Boolean> = profileFlow { prefs ->
         prefs[showFullReleaseDateKey] ?: true
+    }
+
+    val librarySortOption: Flow<String?> = profileFlow { prefs ->
+        prefs[librarySortKey]
+    }
+
+    suspend fun setLibrarySortOption(key: String) {
+        store().edit { prefs ->
+            prefs[librarySortKey] = key
+        }
     }
 
     suspend fun setLayout(layout: HomeLayout) {
