@@ -93,9 +93,11 @@ class DiscoveryViewModel @Inject constructor(
     private fun resolveAndNavigate(tmdbId: Int, onNavigate: (String, String) -> Unit) {
         val mediaType = _uiState.value.contentType
         _uiState.update { it.copy(isResolvingId = true) }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             try {
-                val imdbId = tmdbService.tmdbToImdb(tmdbId, mediaType)
+                val imdbId = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    tmdbService.tmdbToImdb(tmdbId, mediaType)
+                }
                 val resolvedId = imdbId ?: "tmdb:$tmdbId"
                 _uiState.update { it.copy(isResolvingId = false) }
                 onNavigate(resolvedId, mediaType)
