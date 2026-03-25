@@ -117,6 +117,7 @@ fun ModernHomeContent(
     enrichingItemId: String? = null,
     trailerPreviewUrls: Map<String, String>,
     trailerPreviewAudioUrls: Map<String, String>,
+    heroMdbListRatings: Map<String, com.nuvio.tv.domain.model.MDBListRatings> = emptyMap(),
     onNavigateToDetail: (String, String, String) -> Unit,
     onContinueWatchingClick: (ContinueWatchingItem) -> Unit,
     onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = {},
@@ -742,10 +743,14 @@ fun ModernHomeContent(
             bgColor = bgColor,
             modifier = heroMediaModifier
         )
+        val activeHeroRatings = remember(activeItemId, heroMdbListRatings) {
+            activeItemId?.let { heroMdbListRatings[it] }
+        }
         HeroTitleBlock(
             preview = if (enrichmentActive) null else resolvedHero,
             enrichmentActive = enrichmentActive,
             portraitMode = !useLandscapePosters,
+            mdbListRatings = activeHeroRatings,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(

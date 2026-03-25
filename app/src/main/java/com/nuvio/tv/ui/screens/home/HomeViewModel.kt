@@ -14,11 +14,13 @@ import com.nuvio.tv.data.local.StartupAuthNotice
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.WatchedItemsPreferences
+import com.nuvio.tv.data.repository.MDBListRepository
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.LibraryEntryInput
+import com.nuvio.tv.domain.model.MDBListRatings
 import com.nuvio.tv.domain.model.Meta
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.TmdbSettings
@@ -57,7 +59,8 @@ class HomeViewModel @Inject constructor(
     internal val tmdbService: TmdbService,
     internal val tmdbMetadataService: TmdbMetadataService,
     internal val trailerService: TrailerService,
-    internal val watchedItemsPreferences: WatchedItemsPreferences
+    internal val watchedItemsPreferences: WatchedItemsPreferences,
+    internal val mdbListRepository: MDBListRepository
 ) : ViewModel() {
     companion object {
         internal const val TAG = "HomeViewModel"
@@ -154,6 +157,13 @@ class HomeViewModel @Inject constructor(
     val trailerPreviewAudioUrls: Map<String, String>
         get() = trailerPreviewAudioUrlsState
 
+    internal val heroMdbListRatingsState = mutableStateMapOf<String, MDBListRatings>()
+    val heroMdbListRatings: Map<String, MDBListRatings>
+        get() = heroMdbListRatingsState
+    private val mdbListFetchedIds = Collections.synchronizedSet(mutableSetOf<String>())
+    internal var mdbListFetchJob: Job? = null
+    internal var pendingMdbListItemId: String? = null
+
     init {
         observeLayoutPreferences()
         observeExternalMetaPrefetchPreference()
@@ -200,7 +210,56 @@ class HomeViewModel @Inject constructor(
         apiType = apiType
     )
 
-    fun onItemFocus(item: MetaPreview) = onItemFocusPipeline(item)
+    fun onItemFocus(item: MetaPreview) {
+        onItemFocusPipeline(item)
+        fetchMdbListRatingsForItem(item)
+    }
+
+    private fun fetchMdbListRatingsForItem(item: MetaPreview) {
+        val itemId = item.id
+        if (itemId in mdbListFetchedIds) return
+        pendingMdbListItemId = itemId
+        mdbListFetchJob?.cancel()
+        mdbListFetchJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            delay(EXTERNAL_META_PREFETCH_FOCUS_DEBOUNCE_MS)
+            if (pendingMdbListItemId != itemId) return@launch
+            if (itemId in mdbListFetchedIds) return@launch
+            mdbListFetchedIds.add(itemId)
+            val fakeMeta = Meta(
+                id = itemId,
+                type = item.type,
+                rawType = item.apiType,
+                name = item.name,
+                poster = null,
+                posterShape = com.nuvio.tv.domain.model.PosterShape.POSTER,
+                background = null,
+                logo = null,
+                description = null,
+                releaseInfo = null,
+                imdbRating = null,
+                genres = emptyList(),
+                runtime = null,
+                director = emptyList(),
+                cast = emptyList(),
+                videos = emptyList(),
+                country = null,
+                awards = null,
+                language = null,
+                links = emptyList(),
+                imdbId = item.imdbId
+            )
+            val result = runCatching {
+                mdbListRepository.getRatingsForMeta(
+                    meta = fakeMeta,
+                    fallbackItemId = itemId,
+                    fallbackItemType = item.apiType
+                )
+            }.getOrNull()
+            if (result?.ratings != null && !result.ratings.isEmpty()) {
+                heroMdbListRatingsState[itemId] = result.ratings
+            }
+        }
+    }
 
     fun preloadAdjacentItem(item: MetaPreview) = preloadAdjacentItemPipeline(item)
 

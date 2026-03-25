@@ -40,10 +40,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import com.nuvio.tv.R
+import com.nuvio.tv.domain.model.MDBListRatings
 import com.nuvio.tv.ui.components.TrailerPlayer
 import com.nuvio.tv.ui.theme.NuvioColors
 import androidx.compose.ui.res.stringResource
@@ -184,6 +187,7 @@ internal fun HeroTitleBlock(
     preview: HeroPreview?,
     enrichmentActive: Boolean = false,
     portraitMode: Boolean,
+    mdbListRatings: com.nuvio.tv.domain.model.MDBListRatings? = null,
     modifier: Modifier = Modifier
 ) {
     var stablePreview by remember { mutableStateOf<HeroPreview?>(null) }
@@ -196,14 +200,15 @@ internal fun HeroTitleBlock(
         modifier = modifier,
         contentAlignment = Alignment.BottomStart
     ) {
-        HeroTitleContent(preview = stablePreview!!, portraitMode = portraitMode)
+        HeroTitleContent(preview = stablePreview!!, portraitMode = portraitMode, mdbListRatings = mdbListRatings)
     }
 }
 
 @Composable
 private fun HeroTitleContent(
     preview: HeroPreview?,
-    portraitMode: Boolean
+    portraitMode: Boolean,
+    mdbListRatings: com.nuvio.tv.domain.model.MDBListRatings? = null
 ) {
     if (preview == null) return
     val descriptionMaxLines = if (portraitMode) 4 else 5
@@ -318,9 +323,10 @@ private fun HeroTitleContent(
         val statusBadge = secondaryMeta.status
         val secondaryDetails = secondaryMeta.details
         val hasSecondaryBadge = ageRatingBadge != null || statusBadge != null
-        val showImdbInPrimary = !preview.isSeries && !hasSecondaryBadge && !preview.imdbText.isNullOrBlank()
+        val hasMdbListRatings = mdbListRatings != null && !mdbListRatings.isEmpty()
+        val showImdbInPrimary = !hasMdbListRatings && !preview.isSeries && !hasSecondaryBadge && !preview.imdbText.isNullOrBlank()
         val showImdbInPrimaryWithHighlight = showImdbInPrimary && secondaryHighlightText == null
-        val showImdbInSecondary = !preview.imdbText.isNullOrBlank() &&
+        val showImdbInSecondary = !hasMdbListRatings && !preview.imdbText.isNullOrBlank() &&
             (preview.isSeries || hasSecondaryBadge || secondaryHighlightText != null)
 
         Row(
@@ -472,6 +478,13 @@ private fun HeroTitleContent(
             }
         }
 
+        if (hasMdbListRatings) {
+            HeroMdbListRatingsRow(
+                ratings = mdbListRatings!!,
+                metaScale = metaScale
+            )
+        }
+
         preview.description?.takeIf { it.isNotBlank() }?.let { description ->
             Text(
                 text = description,
@@ -590,4 +603,104 @@ private fun HeroMetaDivider(scale: Float) {
             .clip(RoundedCornerShape(percent = 50))
             .background(NuvioColors.TextTertiary.copy(alpha = 0.78f))
     )
+}
+
+@Composable
+private fun HeroMdbListRatingsRow(
+    ratings: MDBListRatings,
+    metaScale: Float
+) {
+    val context = LocalContext.current
+    val logoSize = 22.dp * metaScale
+    val textStyle = MaterialTheme.typography.labelMedium
+    val textColor = NuvioColors.TextSecondary
+
+    val svgItems = remember(ratings) {
+        listOf(
+            Triple("trakt", R.raw.mdblist_trakt, ratings.trakt),
+            Triple("imdb", R.raw.imdb_logo_2016, ratings.imdb),
+            Triple("tmdb", R.raw.mdblist_tmdb, ratings.tmdb),
+            Triple("letterboxd", R.raw.mdblist_letterboxd, ratings.letterboxd),
+            Triple("tomatoes", R.raw.mdblist_tomatoes, ratings.tomatoes)
+        ).filter { it.third != null }
+    }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp * metaScale),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        svgItems.forEach { (provider, logoRes, rating) ->
+            val resolvedRating = rating ?: return@forEach
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp * metaScale),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val model = remember(context, logoRes) {
+                    ImageRequest.Builder(context)
+                        .data(logoRes)
+                        .decoderFactory(SvgDecoder.Factory())
+                        .build()
+                }
+                AsyncImage(
+                    model = model,
+                    contentDescription = null,
+                    modifier = Modifier.size(logoSize),
+                    contentScale = ContentScale.Fit
+                )
+                Text(
+                    text = formatHeroRating(provider, resolvedRating),
+                    style = textStyle,
+                    color = textColor,
+                    maxLines = 1
+                )
+            }
+        }
+
+        ratings.audience?.let { rating ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp * metaScale),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.mdblist_audience),
+                    contentDescription = null,
+                    modifier = Modifier.size(logoSize)
+                )
+                Text(
+                    text = formatHeroRating("audience", rating),
+                    style = textStyle,
+                    color = textColor,
+                    maxLines = 1
+                )
+            }
+        }
+
+        ratings.metacritic?.let { rating ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp * metaScale),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.mdblist_metacritic),
+                    contentDescription = null,
+                    modifier = Modifier.size(logoSize)
+                )
+                Text(
+                    text = formatHeroRating("metacritic", rating),
+                    style = textStyle,
+                    color = textColor,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+private fun formatHeroRating(provider: String, rating: Double): String {
+    return when (provider) {
+        "imdb", "tmdb", "letterboxd" -> String.format("%.1f", rating)
+        else -> {
+            if (rating % 1.0 == 0.0) rating.toInt().toString() else String.format("%.1f", rating)
+        }
+    }
 }
