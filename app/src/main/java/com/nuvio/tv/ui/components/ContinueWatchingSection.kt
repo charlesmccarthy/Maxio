@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -237,16 +236,17 @@ fun ContinueWatchingCard(
     var longPressTriggered by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
 
-    // Netflix-style focus animations
-    val focusScale by animateFloatAsState(
-        targetValue = if (isFocused) PosterCardDefaults.FocusedScale else PosterCardDefaults.UnfocusedScale,
-        animationSpec = PosterCardDefaults.FocusSpring,
-        label = "cwCardScale"
-    )
-    val focusElevation by animateDpAsState(
-        targetValue = if (isFocused) PosterCardDefaults.FocusedElevation else PosterCardDefaults.UnfocusedElevation,
-        label = "cwCardElevation"
-    )
+    // Netflix-style focus animations — only allocate when focused
+    val focusScale = if (isFocused) {
+        val scale by animateFloatAsState(
+            targetValue = PosterCardDefaults.FocusedScale,
+            animationSpec = PosterCardDefaults.FocusSpring,
+            label = "cwCardScale"
+        )
+        scale
+    } else {
+        PosterCardDefaults.UnfocusedScale
+    }
 
     val progress = remember(item) { (item as? ContinueWatchingItem.InProgress)?.progress }
     val nextUp = remember(item) { (item as? ContinueWatchingItem.NextUp)?.info }
@@ -356,7 +356,10 @@ fun ContinueWatchingCard(
                 scaleX = focusScale
                 scaleY = focusScale
             }
-            .shadow(focusElevation, CwCardShape, clip = false)
+            .then(
+                if (isFocused) Modifier.shadow(PosterCardDefaults.FocusedElevation, CwCardShape, clip = false)
+                else Modifier
+            )
             .onFocusChanged { isFocused = it.isFocused }
             .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent

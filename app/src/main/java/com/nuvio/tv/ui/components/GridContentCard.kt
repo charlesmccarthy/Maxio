@@ -1,7 +1,6 @@
 package com.nuvio.tv.ui.components
 
 import android.view.KeyEvent as AndroidKeyEvent
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -71,12 +70,6 @@ fun GridContentCard(
     var isFocused by remember { mutableStateOf(false) }
     var longPressTriggered by remember { mutableStateOf(false) }
 
-    // Netflix-style focus shadow
-    val focusElevation by animateDpAsState(
-        targetValue = if (isFocused) PosterCardDefaults.FocusedElevation else PosterCardDefaults.UnfocusedElevation,
-        label = "gridCardElevation"
-    )
-
     Column(
         modifier = modifier.width(posterCardStyle.width)
     ) {
@@ -91,7 +84,10 @@ fun GridContentCard(
             modifier = Modifier
                 .width(posterCardStyle.width)
                 .height(posterCardStyle.height)
-                .shadow(focusElevation, cardShape, clip = false)
+                .then(
+                    if (isFocused) Modifier.shadow(PosterCardDefaults.FocusedElevation, cardShape, clip = false)
+                    else Modifier
+                )
                 .then(
                     if (focusRequester != null) Modifier.focusRequester(focusRequester)
                     else Modifier

@@ -761,16 +761,17 @@ private fun ModernCarouselCard(
         )
     }
 
-    // Netflix-style focus animations
-    val focusScale by animateFloatAsState(
-        targetValue = if (isFocused) PosterCardDefaults.FocusedScale else PosterCardDefaults.UnfocusedScale,
-        animationSpec = PosterCardDefaults.FocusSpring,
-        label = "modernCardScale"
-    )
-    val focusElevation by animateDpAsState(
-        targetValue = if (isFocused) PosterCardDefaults.FocusedElevation else PosterCardDefaults.UnfocusedElevation,
-        label = "modernCardElevation"
-    )
+    // Netflix-style focus animations — only allocate when focused to avoid per-card overhead
+    val focusScale = if (isFocused) {
+        val scale by animateFloatAsState(
+            targetValue = PosterCardDefaults.FocusedScale,
+            animationSpec = PosterCardDefaults.FocusSpring,
+            label = "modernCardScale"
+        )
+        scale
+    } else {
+        PosterCardDefaults.UnfocusedScale
+    }
     val titleStyle = remember(titleMedium) {
         titleMedium.copy(fontWeight = FontWeight.Medium)
     }
@@ -824,7 +825,10 @@ private fun ModernCarouselCard(
                     scaleX = focusScale
                     scaleY = focusScale
                 }
-                .shadow(focusElevation, cardShape, clip = false)
+                .then(
+                    if (isFocused) Modifier.shadow(PosterCardDefaults.FocusedElevation, cardShape, clip = false)
+                    else Modifier
+                )
                 .clip(cardShape)
                 .border(if (isFocused) focusedBorder.border else BorderStroke(0.dp, Color.Transparent), cardShape)
                 .clickable(

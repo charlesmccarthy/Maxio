@@ -228,12 +228,6 @@ fun ContentCard(
         val bgCardColor = NuvioColors.BackgroundCard
         val backgroundPainter = remember(bgCardColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgCardColor) }
 
-        // Netflix-style focus shadow
-        val focusElevation by animateDpAsState(
-            targetValue = if (isFocused) PosterCardDefaults.FocusedElevation else PosterCardDefaults.UnfocusedElevation,
-            label = "contentCardElevation"
-        )
-
         Card(
             onClick = {
                 if (longPressTriggered) {
@@ -244,7 +238,10 @@ fun ContentCard(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(focusElevation, cardShape, clip = false)
+                .then(
+                    if (isFocused) Modifier.shadow(PosterCardDefaults.FocusedElevation, cardShape, clip = false)
+                    else Modifier
+                )
                 .onFocusChanged { state ->
                     val focusedNow = state.isFocused
                     if (needsFocusState) {

@@ -884,7 +884,7 @@ private fun ModernSidebarScaffold(
     var pendingContentFocusTransfer by remember { mutableStateOf(false) }
     var pendingSidebarFocusRequest by remember { mutableStateOf(false) }
     var focusedDrawerIndex by remember { mutableStateOf(-1) }
-    var isFloatingPillIconOnly by remember { mutableStateOf(false) }
+    var isFloatingPillIconOnly by remember { mutableStateOf(true) }
     val keepFloatingPillExpanded = selectedDrawerRoute == Screen.Settings.route
     val keepSidebarFocusDuringCollapse =
         isSidebarExpanded || sidebarCollapsePending || pendingContentFocusTransfer
@@ -1087,7 +1087,6 @@ private fun ModernSidebarScaffold(
                         if (!keepFloatingPillExpanded) {
                             when (keyEvent.key) {
                                 Key.DirectionDown -> isFloatingPillIconOnly = true
-                                Key.DirectionUp -> isFloatingPillIconOnly = false
                                 else -> Unit
                             }
                         }

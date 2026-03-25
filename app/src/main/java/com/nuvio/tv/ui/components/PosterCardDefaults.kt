@@ -13,7 +13,7 @@ data class PosterCardStyle(
     val height: Dp = 189.dp,
     val cornerRadius: Dp = 12.dp,
     val focusedBorderWidth: Dp = 2.dp,
-    val focusedScale: Float = 1.05f
+    val focusedScale: Float = 1.08f
 ) {
     val aspectRatio: Float
         get() = width.value / height.value
@@ -35,7 +35,7 @@ object PosterCardDefaults {
     val UnfocusedElevation = 0.dp
 
     /** Scale applied to focused cards (matches PosterCardStyle default). */
-    const val FocusedScale = 1.05f
+    const val FocusedScale = 1.08f
 
     /** Scale applied to unfocused cards. */
     const val UnfocusedScale = 1.0f
