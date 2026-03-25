@@ -216,7 +216,10 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun fetchMdbListRatingsForItem(item: MetaPreview) {
-        val itemId = item.id
+        fetchMdbListRatings(item.id, item.apiType)
+    }
+
+    fun fetchMdbListRatings(itemId: String, itemType: String) {
         if (itemId in mdbListFetchedIds) return
         pendingMdbListItemId = itemId
         mdbListFetchJob?.cancel()
@@ -227,9 +230,9 @@ class HomeViewModel @Inject constructor(
             mdbListFetchedIds.add(itemId)
             val fakeMeta = Meta(
                 id = itemId,
-                type = item.type,
-                rawType = item.apiType,
-                name = item.name,
+                type = com.nuvio.tv.domain.model.ContentType.fromString(itemType),
+                rawType = itemType,
+                name = "",
                 poster = null,
                 posterShape = com.nuvio.tv.domain.model.PosterShape.POSTER,
                 background = null,
@@ -246,13 +249,13 @@ class HomeViewModel @Inject constructor(
                 awards = null,
                 language = null,
                 links = emptyList(),
-                imdbId = item.imdbId
+                imdbId = itemId.takeIf { it.startsWith("tt") }
             )
             val result = runCatching {
                 mdbListRepository.getRatingsForMeta(
                     meta = fakeMeta,
                     fallbackItemId = itemId,
-                    fallbackItemType = item.apiType
+                    fallbackItemType = itemType
                 )
             }.getOrNull()
             if (result?.ratings != null && !result.ratings.isEmpty()) {
