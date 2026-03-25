@@ -1,5 +1,7 @@
 package com.nuvio.tv.ui.screens.home
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -18,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +51,7 @@ import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.MDBListRatings
+import kotlinx.coroutines.launch
 import com.nuvio.tv.ui.components.TrailerPlayer
 import com.nuvio.tv.ui.theme.NuvioColors
 import androidx.compose.ui.res.stringResource
@@ -254,18 +259,64 @@ private fun HeroTitleContent(
         )
     }
 
+    // Staggered entrance animation — title, meta/ratings, description
+    val heroAnimKey = preview.title + (preview.poster ?: "")
+    val titleAlpha = remember { Animatable(0f) }
+    val titleOffsetY = remember { Animatable(20f) }
+    val metaAlpha = remember { Animatable(0f) }
+    val metaOffsetY = remember { Animatable(20f) }
+    val descAlpha = remember { Animatable(0f) }
+    val descOffsetY = remember { Animatable(20f) }
+    val heroAnimSpec = tween<Float>(durationMillis = 300, easing = FastOutSlowInEasing)
+
+    val heroAnimScope = rememberCoroutineScope()
+    LaunchedEffect(heroAnimKey) {
+        // Reset all to hidden
+        titleAlpha.snapTo(0f); titleOffsetY.snapTo(20f)
+        metaAlpha.snapTo(0f); metaOffsetY.snapTo(20f)
+        descAlpha.snapTo(0f); descOffsetY.snapTo(20f)
+        // Stagger: title 0ms, meta 80ms, description 160ms
+        heroAnimScope.launch { titleAlpha.animateTo(1f, heroAnimSpec) }
+        heroAnimScope.launch { titleOffsetY.animateTo(0f, heroAnimSpec) }
+        heroAnimScope.launch {
+            kotlinx.coroutines.delay(80)
+            metaAlpha.animateTo(1f, heroAnimSpec)
+        }
+        heroAnimScope.launch {
+            kotlinx.coroutines.delay(80)
+            metaOffsetY.animateTo(0f, heroAnimSpec)
+        }
+        heroAnimScope.launch {
+            kotlinx.coroutines.delay(160)
+            descAlpha.animateTo(1f, heroAnimSpec)
+        }
+        heroAnimScope.launch {
+            kotlinx.coroutines.delay(160)
+            descOffsetY.animateTo(0f, heroAnimSpec)
+        }
+    }
+
+    val titleOffsetPx = with(density) { titleOffsetY.value.dp.toPx() }
+    val metaOffsetPx = with(density) { metaOffsetY.value.dp.toPx() }
+    val descOffsetPx = with(density) { descOffsetY.value.dp.toPx() }
+
     Column(
         modifier = Modifier,
         verticalArrangement = Arrangement.spacedBy(titleSpacing)
     ) {
         var logoLoadFailed by remember(preview.logo) { mutableStateOf(false) }
         val showLogo = !preview.logo.isNullOrBlank() && !logoLoadFailed
+        // Title / Logo — entrance animation group 1
+        val titleAnimModifier = Modifier.graphicsLayer {
+            alpha = titleAlpha.value
+            translationY = titleOffsetPx
+        }
         if (showLogo) {
             AsyncImage(
                 model = logoModel,
                 contentDescription = preview.title,
                 onError = { logoLoadFailed = true },
-                modifier = Modifier
+                modifier = titleAnimModifier
                     .height(100.dp)
                     .widthIn(min = 100.dp, max = 220.dp)
                     .fillMaxWidth(),
@@ -278,7 +329,8 @@ private fun HeroTitleContent(
                 style = scaledTitleStyle,
                 color = NuvioColors.TextPrimary,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = titleAnimModifier
             )
         }
 
@@ -329,8 +381,12 @@ private fun HeroTitleContent(
         val showImdbInSecondary = !hasMdbListRatings && !preview.imdbText.isNullOrBlank() &&
             (preview.isSeries || hasSecondaryBadge || secondaryHighlightText != null)
 
+        // Meta / ratings — entrance animation group 2
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().graphicsLayer {
+                alpha = metaAlpha.value
+                translationY = metaOffsetPx
+            },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(metaSpacing)
         ) {
@@ -407,7 +463,10 @@ private fun HeroTitleContent(
 
         if (secondaryHighlightText != null || ageRatingBadge != null || showImdbInSecondary || statusBadge != null || secondaryDetails.isNotEmpty()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().graphicsLayer {
+                    alpha = metaAlpha.value
+                    translationY = metaOffsetPx
+                },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(metaSpacing)
             ) {
@@ -479,19 +538,29 @@ private fun HeroTitleContent(
         }
 
         if (hasMdbListRatings) {
-            HeroMdbListRatingsRow(
-                ratings = mdbListRatings!!,
-                metaScale = metaScale
-            )
+            Box(modifier = Modifier.graphicsLayer {
+                alpha = metaAlpha.value
+                translationY = metaOffsetPx
+            }) {
+                HeroMdbListRatingsRow(
+                    ratings = mdbListRatings!!,
+                    metaScale = metaScale
+                )
+            }
         }
 
+        // Description — entrance animation group 3
         preview.description?.takeIf { it.isNotBlank() }?.let { description ->
             Text(
                 text = description,
                 style = scaledDescriptionStyle,
                 color = NuvioColors.TextPrimary,
                 maxLines = descriptionMaxLines,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer {
+                    alpha = descAlpha.value
+                    translationY = descOffsetPx
+                }
             )
         }
     }

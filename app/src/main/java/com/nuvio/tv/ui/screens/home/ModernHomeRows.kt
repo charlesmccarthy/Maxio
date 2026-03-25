@@ -5,11 +5,13 @@ package com.nuvio.tv.ui.screens.home
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +44,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
@@ -83,6 +86,7 @@ import com.nuvio.tv.domain.model.FocusedPosterTrailerPlaybackTarget
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.ContinueWatchingCard
 import com.nuvio.tv.ui.components.MonochromePosterPlaceholder
+import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.TrailerPlayer
 import com.nuvio.tv.LocalSidebarExpanded
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -756,6 +760,17 @@ private fun ModernCarouselCard(
             shape = cardShape
         )
     }
+
+    // Netflix-style focus animations
+    val focusScale by animateFloatAsState(
+        targetValue = if (isFocused) PosterCardDefaults.FocusedScale else PosterCardDefaults.UnfocusedScale,
+        animationSpec = PosterCardDefaults.FocusSpring,
+        label = "modernCardScale"
+    )
+    val focusElevation by animateDpAsState(
+        targetValue = if (isFocused) PosterCardDefaults.FocusedElevation else PosterCardDefaults.UnfocusedElevation,
+        label = "modernCardElevation"
+    )
     val titleStyle = remember(titleMedium) {
         titleMedium.copy(fontWeight = FontWeight.Medium)
     }
@@ -805,6 +820,11 @@ private fun ModernCarouselCard(
                     }
                     false
                 }
+                .graphicsLayer {
+                    scaleX = focusScale
+                    scaleY = focusScale
+                }
+                .shadow(focusElevation, cardShape, clip = false)
                 .clip(cardShape)
                 .border(if (isFocused) focusedBorder.border else BorderStroke(0.dp, Color.Transparent), cardShape)
                 .clickable(

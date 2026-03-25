@@ -1,10 +1,14 @@
 package com.nuvio.tv.ui.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -68,7 +72,11 @@ fun NuvioNavHost(
             if (isStreamToPlayer(from, to) && isAutoPlayNav) {
                 EnterTransition.None
             } else {
-                fadeIn(animationSpec = tween(350))
+                fadeIn(animationSpec = tween(300, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(
+                        initialOffsetX = { it / 5 },
+                        animationSpec = tween(300, easing = FastOutSlowInEasing)
+                    )
             }
         },
         exitTransition = {
@@ -80,7 +88,7 @@ fun NuvioNavHost(
             if (isStreamToPlayer(from, to) && isAutoPlayNav) {
                 ExitTransition.None
             } else {
-                fadeOut(animationSpec = tween(350))
+                fadeOut(animationSpec = tween(250))
             }
         },
         popEnterTransition = {
@@ -92,7 +100,7 @@ fun NuvioNavHost(
             if (isPlayerToStream(from, to) && isAutoPlayNav) {
                 EnterTransition.None
             } else {
-                fadeIn(animationSpec = tween(350))
+                fadeIn(animationSpec = tween(250))
             }
         },
         popExitTransition = {
@@ -104,7 +112,11 @@ fun NuvioNavHost(
             if (isPlayerToStream(from, to) && isAutoPlayNav) {
                 ExitTransition.None
             } else {
-                fadeOut(animationSpec = tween(350))
+                fadeOut(animationSpec = tween(250, easing = LinearOutSlowInEasing)) +
+                    slideOutHorizontally(
+                        targetOffsetX = { it / 5 },
+                        animationSpec = tween(250, easing = LinearOutSlowInEasing)
+                    )
             }
         }
     ) {

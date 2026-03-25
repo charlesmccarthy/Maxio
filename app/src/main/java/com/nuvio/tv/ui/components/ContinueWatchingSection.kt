@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,12 +32,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.stringResource
@@ -231,6 +235,18 @@ fun ContinueWatchingCard(
     imageHeight: Dp = 162.dp
 ) {
     var longPressTriggered by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+
+    // Netflix-style focus animations
+    val focusScale by animateFloatAsState(
+        targetValue = if (isFocused) PosterCardDefaults.FocusedScale else PosterCardDefaults.UnfocusedScale,
+        animationSpec = PosterCardDefaults.FocusSpring,
+        label = "cwCardScale"
+    )
+    val focusElevation by animateDpAsState(
+        targetValue = if (isFocused) PosterCardDefaults.FocusedElevation else PosterCardDefaults.UnfocusedElevation,
+        label = "cwCardElevation"
+    )
 
     val progress = remember(item) { (item as? ContinueWatchingItem.InProgress)?.progress }
     val nextUp = remember(item) { (item as? ContinueWatchingItem.NextUp)?.info }
@@ -336,6 +352,12 @@ fun ContinueWatchingCard(
         },
         modifier = modifier
             .width(cardWidth)
+            .graphicsLayer {
+                scaleX = focusScale
+                scaleY = focusScale
+            }
+            .shadow(focusElevation, CwCardShape, clip = false)
+            .onFocusChanged { isFocused = it.isFocused }
             .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent
                 if (native.action == AndroidKeyEvent.ACTION_DOWN) {
@@ -470,6 +492,14 @@ fun ContinueWatchingCard(
                 }
 
                 if (progress != null) {
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = progressFraction,
+                        animationSpec = androidx.compose.animation.core.tween(
+                            durationMillis = 600,
+                            easing = androidx.compose.animation.core.FastOutSlowInEasing
+                        ),
+                        label = "cwProgress"
+                    )
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
@@ -481,7 +511,7 @@ fun ContinueWatchingCard(
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(progressFraction)
+                                .fillMaxWidth(animatedProgress)
                                 .clip(RoundedCornerShape(1.5.dp))
                                 .height(3.dp)
                                 .background(NuvioColors.Primary)

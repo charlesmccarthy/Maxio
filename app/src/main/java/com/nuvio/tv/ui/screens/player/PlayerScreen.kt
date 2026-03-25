@@ -1065,33 +1065,38 @@ private fun PlayerControlsOverlay(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Top gradient
+        // Top gradient — glass-like multi-stop for depth
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(150.dp)
+                .height(160.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.7f),
-                            Color.Transparent
+                        colorStops = arrayOf(
+                            0.0f to Color.Black.copy(alpha = 0.80f),
+                            0.35f to Color.Black.copy(alpha = 0.50f),
+                            0.65f to Color.Black.copy(alpha = 0.20f),
+                            1.0f to Color.Transparent
                         )
                     )
                 )
         )
 
-        // Bottom gradient
+        // Bottom gradient — glass-like multi-stop for depth
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(220.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.8f)
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.25f to Color.Black.copy(alpha = 0.15f),
+                            0.5f to Color.Black.copy(alpha = 0.45f),
+                            0.75f to Color.Black.copy(alpha = 0.72f),
+                            1.0f to Color.Black.copy(alpha = 0.88f)
                         )
                     )
                 )
