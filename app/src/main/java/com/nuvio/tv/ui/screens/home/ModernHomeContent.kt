@@ -743,9 +743,7 @@ fun ModernHomeContent(
             bgColor = bgColor,
             modifier = heroMediaModifier
         )
-        val activeHeroRatings = remember(activeItemId, heroMdbListRatings) {
-            activeItemId?.let { heroMdbListRatings[it] }
-        }
+        val activeHeroRatings = activeItemId?.let { heroMdbListRatings[it] }
         HeroTitleBlock(
             preview = if (enrichmentActive) null else resolvedHero,
             enrichmentActive = enrichmentActive,
