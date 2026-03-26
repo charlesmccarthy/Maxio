@@ -66,7 +66,7 @@ import kotlinx.coroutines.delay
 
 private const val KEY_REPEAT_THROTTLE_MS = 80L
 private const val ITEM_FOCUS_DEBOUNCE_MS = 130L
-private const val TRAILER_REQUEST_DEBOUNCE_MS = 100L
+private const val TRAILER_REQUEST_DEBOUNCE_MS = 50L
 private const val SLIDE_ANIM_MS = 300
 private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
 
@@ -103,7 +103,8 @@ fun NetflixStyleRow(
     if (items.isEmpty()) return
 
     val expandedCardHeight = posterCardStyle.height
-    val expandedCardWidth = expandedCardHeight * (16f / 9f)
+    // ~45% of typical 1920dp TV screen minus horizontal padding (48dp * 2)
+    val expandedCardWidth = 780.dp
     val posterWidth = posterCardStyle.width
     val posterHeight = posterCardStyle.height
     val cardShape = remember(posterCardStyle.cornerRadius) { RoundedCornerShape(posterCardStyle.cornerRadius) }
@@ -154,12 +155,8 @@ fun NetflixStyleRow(
         if (isFocused) onRowFocused()
     }
 
-    val selectedItemId = items[selectedIndex].id
-    val selectedTrailerPreviewUrl = trailerPreviewUrls[selectedItemId]
-    val selectedTrailerPreviewAudioUrl = trailerPreviewAudioUrls[selectedItemId]
-
-    // DEBUG: temporary overlay to diagnose trailer issue — REMOVE after fixing
-    val debugTrailerState = "focused=$isFocused trailer=$trailerEnabled url=${if (selectedTrailerPreviewUrl != null) "YES" else "null"} mapSize=${trailerPreviewUrls.size} id=${selectedItemId.take(12)}"
+    val selectedTrailerPreviewUrl = trailerPreviewUrls[items[selectedIndex].id]
+    val selectedTrailerPreviewAudioUrl = trailerPreviewAudioUrls[items[selectedIndex].id]
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Title row
@@ -262,30 +259,17 @@ fun NetflixStyleRow(
             verticalAlignment = Alignment.Top
         ) {
             // Expanded card (left) — always expanded, shows backdrop for selected item
-            Box {
-                ExpandedCarouselCard(
-                    items = items,
-                    selectedIndex = selectedIndex,
-                    width = expandedCardWidth,
-                    height = expandedCardHeight,
-                    shape = cardShape,
-                    isFocused = isFocused,
-                    trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
-                    trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
-                    trailerMuted = trailerMuted
-                )
-                // DEBUG overlay — ALWAYS visible — REMOVE after fixing
-                Text(
-                    text = debugTrailerState,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = Color.Yellow,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(4.dp)
-                        .background(Color.Black.copy(alpha = 0.85f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+            ExpandedCarouselCard(
+                items = items,
+                selectedIndex = selectedIndex,
+                width = expandedCardWidth,
+                height = expandedCardHeight,
+                shape = cardShape,
+                isFocused = isFocused,
+                trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
+                trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
+                trailerMuted = trailerMuted
+            )
 
             // Poster strip (right) — fade+slide when index changes
             val actualPosterCount = if (showSelectedPosterInStrip) {
