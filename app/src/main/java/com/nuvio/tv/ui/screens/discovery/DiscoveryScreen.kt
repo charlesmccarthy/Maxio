@@ -46,8 +46,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nuvio.tv.data.remote.api.TmdbGenre
 import com.nuvio.tv.domain.model.MetaPreview
-import com.nuvio.tv.ui.components.ContentCard
-import com.nuvio.tv.ui.navigation.Screen
+import com.nuvio.tv.ui.components.NetflixStyleRow
 import com.nuvio.tv.ui.theme.NuvioColors
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -124,7 +123,7 @@ fun DiscoveryScreen(
 
                 // Content rows
                 items(state.rows, key = { it.title }) { row ->
-                    DiscoveryContentRow(
+                    NetflixStyleRow(
                         title = row.title,
                         items = row.items,
                         onItemClick = { item ->
@@ -301,35 +300,6 @@ private fun SurpriseMeCard(
                         colors = ButtonDefaults.colors(containerColor = Color.White.copy(alpha = 0.15f))
                     ) { Text("Details") }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DiscoveryContentRow(
-    title: String,
-    items: List<MetaPreview>,
-    onItemClick: (MetaPreview) -> Unit
-) {
-    Column {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = NuvioColors.TextPrimary,
-            modifier = Modifier.padding(start = 48.dp, bottom = 12.dp)
-        )
-
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 48.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(items, key = { it.id }) { item ->
-                ContentCard(
-                    item = item,
-                    onClick = { onItemClick(item) },
-                    modifier = Modifier.width(140.dp)
-                )
             }
         }
     }

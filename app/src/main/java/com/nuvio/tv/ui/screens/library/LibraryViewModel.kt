@@ -66,6 +66,11 @@ data class LibraryListEditorState(
     }
 }
 
+data class LibraryRowGroup(
+    val title: String,
+    val items: List<LibraryEntry>
+)
+
 data class LibraryUiState(
     val sourceMode: LibrarySourceMode = LibrarySourceMode.LOCAL,
     val allItems: List<LibraryEntry> = emptyList(),
@@ -87,7 +92,26 @@ data class LibraryUiState(
     val manageSelectedListKey: String? = null,
     val listEditorState: LibraryListEditorState? = null,
     val pendingOperation: Boolean = false
-)
+) {
+    val groupedRows: List<LibraryRowGroup>
+        get() {
+            if (visibleItems.isEmpty()) return emptyList()
+            val groups = mutableListOf<LibraryRowGroup>()
+            val movies = visibleItems.filter { it.type.equals("movie", ignoreCase = true) }
+            val series = visibleItems.filter { it.type.equals("series", ignoreCase = true) }
+            val other = visibleItems.filter {
+                !it.type.equals("movie", ignoreCase = true) && !it.type.equals("series", ignoreCase = true)
+            }
+            if (movies.isNotEmpty()) groups.add(LibraryRowGroup("Movies", movies))
+            if (series.isNotEmpty()) groups.add(LibraryRowGroup("TV Shows", series))
+            if (other.isNotEmpty()) groups.add(LibraryRowGroup("Other", other))
+            // If all items are the same type, just return one group with a generic title
+            if (groups.size == 1) {
+                return listOf(LibraryRowGroup("Library", visibleItems))
+            }
+            return groups
+        }
+}
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(

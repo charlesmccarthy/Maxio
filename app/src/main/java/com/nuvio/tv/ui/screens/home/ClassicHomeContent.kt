@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListPrefetchStrategy
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -27,10 +26,13 @@ import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.nuvio.tv.domain.model.MetaPreview
-import com.nuvio.tv.ui.components.CatalogRowSection
 import com.nuvio.tv.ui.components.ContinueWatchingSection
 import com.nuvio.tv.ui.components.HeroCarousel
+import com.nuvio.tv.ui.components.NetflixStyleRow
 import com.nuvio.tv.ui.components.PosterCardStyle
+import com.nuvio.tv.ui.util.formatAddonTypeLabel
+import com.nuvio.tv.R
+import androidx.compose.ui.res.stringResource
 
 /** Minimum interval between processed key repeat events to prevent HWUI overload. */
 private const val KEY_REPEAT_THROTTLE_MS = 80L
@@ -96,8 +98,8 @@ fun ClassicHomeContent(
         )
     }
 
-    // Store scroll state for each row to persist position during recycling
-    val rowStates = remember { mutableMapOf<String, LazyListState>() }
+    // Store selected index per row for Netflix carousel state
+    val rowSelectedIndices = remember { mutableMapOf<String, Int>() }
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
 
     var restoringFocus by remember { mutableStateOf(focusState.hasSavedFocus) }
@@ -115,7 +117,7 @@ fun ClassicHomeContent(
     }
 
     LaunchedEffect(visibleCatalogKeys) {
-        rowStates.keys.retainAll(visibleCatalogKeys)
+        rowSelectedIndices.keys.retainAll(visibleCatalogKeys)
         rowFocusRequesters.keys.retainAll(visibleCatalogKeys)
     }
 
@@ -126,7 +128,7 @@ fun ClassicHomeContent(
                 columnListState.firstVisibleItemScrollOffset,
                 currentFocusSnapshot.rowIndex,
                 currentFocusSnapshot.itemIndex,
-                focusState.catalogRowScrollStates + rowStates.mapValues { it.value.firstVisibleItemIndex }
+                focusState.catalogRowScrollStates + rowSelectedIndices
             )
         }
     }
@@ -247,54 +249,74 @@ fun ClassicHomeContent(
                     !heroVisible &&
                     uiState.continueWatchingItems.isEmpty() &&
                     index == 0
-            val focusedItemIndex = when {
-                shouldRestoreFocus -> focusState.focusedItemIndex
-                shouldInitialFocusFirstCatalogRow -> 0
-                else -> -1
-            }
 
-            val listState = rowStates.getOrPut(catalogKey) {
-                LazyListState(
-                    firstVisibleItemIndex = focusState.catalogRowScrollStates[catalogKey] ?: 0
-                )
+            val strTypeMovie = stringResource(R.string.type_movie)
+            val strTypeSeries = stringResource(R.string.type_series)
+            val typeLabel = remember(catalogRow.rawType, catalogRow.apiType, strTypeMovie, strTypeSeries) {
+                val raw = catalogRow.rawType.takeIf { it.isNotBlank() } ?: catalogRow.apiType
+                when (raw.lowercase()) {
+                    "movie" -> strTypeMovie
+                    "series" -> strTypeSeries
+                    else -> formatAddonTypeLabel(raw)
+                }
             }
+            val catalogTitle = remember(catalogRow.catalogName, typeLabel, uiState.catalogTypeSuffixEnabled) {
+                val formattedName = catalogRow.catalogName.replaceFirstChar { it.uppercase() }
+                if (uiState.catalogTypeSuffixEnabled && typeLabel.isNotEmpty()) "$formattedName - $typeLabel" else formattedName
+            }
+            val catalogSubtitle = if (uiState.catalogAddonNameEnabled) {
+                stringResource(R.string.catalog_from_addon, catalogRow.addonName)
+            } else null
+
             val rowFocusRequester = rowFocusRequesters.getOrPut(catalogKey) { FocusRequester() }
+            val savedIndex = rowSelectedIndices[catalogKey] ?: 0
+            val initialIndex = when {
+                shouldRestoreFocus -> focusState.focusedItemIndex.coerceIn(0, (catalogRow.items.size - 1).coerceAtLeast(0))
+                else -> savedIndex.coerceIn(0, (catalogRow.items.size - 1).coerceAtLeast(0))
+            }
 
-            CatalogRowSection(
-                catalogRow = catalogRow,
-                posterCardStyle = posterCardStyle,
-                showPosterLabels = uiState.posterLabelsEnabled,
-                showAddonName = uiState.catalogAddonNameEnabled,
-                showCatalogTypeSuffix = uiState.catalogTypeSuffixEnabled,
-                focusedPosterBackdropExpandEnabled = uiState.focusedPosterBackdropExpandEnabled,
-                focusedPosterBackdropExpandDelaySeconds = uiState.focusedPosterBackdropExpandDelaySeconds,
-                focusedPosterBackdropTrailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
-                focusedPosterBackdropTrailerMuted = uiState.focusedPosterBackdropTrailerMuted,
-                trailerPreviewUrls = trailerPreviewUrls,
-                trailerPreviewAudioUrls = trailerPreviewAudioUrls,
-                onRequestTrailerPreview = onRequestTrailerPreview,
-                onItemFocus = onItemFocus,
+            // Get the selected item for this row to pass its trailer URLs
+            val currentSelectedIndex = rowSelectedIndices[catalogKey] ?: initialIndex
+            val selectedItem = catalogRow.items.getOrNull(currentSelectedIndex)
+
+            // Request initial focus if needed
+            LaunchedEffect(shouldRestoreFocus, shouldInitialFocusFirstCatalogRow) {
+                if (shouldRestoreFocus || shouldInitialFocusFirstCatalogRow) {
+                    repeat(2) { withFrameNanos { } }
+                    try {
+                        rowFocusRequester.requestFocus()
+                        if (restoringFocus) restoringFocus = false
+                    } catch (_: IllegalStateException) {}
+                }
+            }
+
+            NetflixStyleRow(
+                title = catalogTitle,
+                subtitle = catalogSubtitle,
+                items = catalogRow.items,
+                onItemClick = { item ->
+                    onNavigateToDetail(item.id, item.apiType, catalogRow.addonBaseUrl)
+                },
+                onItemLongPress = { item ->
+                    onCatalogItemLongPress(item, catalogRow.addonBaseUrl)
+                },
                 isItemWatched = isCatalogItemWatched,
-                onItemLongPress = onCatalogItemLongPress,
-                onItemClick = { id, type, addonBaseUrl ->
-                    onNavigateToDetail(id, type, addonBaseUrl)
+                posterCardStyle = posterCardStyle,
+                trailerPreviewUrl = selectedItem?.let { trailerPreviewUrls[it.id] },
+                trailerPreviewAudioUrl = selectedItem?.let { trailerPreviewAudioUrls[it.id] },
+                onRequestTrailerPreview = onRequestTrailerPreview,
+                trailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
+                trailerMuted = uiState.focusedPosterBackdropTrailerMuted,
+                focusRequester = rowFocusRequester,
+                initialSelectedIndex = initialIndex,
+                onSelectedIndexChange = { newIndex ->
+                    rowSelectedIndices[catalogKey] = newIndex
+                    currentFocusSnapshot.rowIndex = index
+                    currentFocusSnapshot.itemIndex = newIndex
                 },
-                onSeeAll = {
-                    onNavigateToCatalogSeeAll(
-                        catalogRow.catalogId,
-                        catalogRow.addonId,
-                        catalogRow.apiType
-                    )
-                },
-                rowFocusRequester = rowFocusRequester,
-                listState = listState,
-                enableRowFocusRestorer = true,
-                
-                focusedItemIndex = focusedItemIndex,
-                onItemFocused = { itemIndex ->
+                onRowFocused = {
                     if (restoringFocus) restoringFocus = false
                     currentFocusSnapshot.rowIndex = index
-                    currentFocusSnapshot.itemIndex = itemIndex
                 }
             )
         }

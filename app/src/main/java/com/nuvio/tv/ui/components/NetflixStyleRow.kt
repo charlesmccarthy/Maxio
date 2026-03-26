@@ -1,0 +1,525 @@
+package com.nuvio.tv.ui.components
+
+import android.view.KeyEvent as AndroidKeyEvent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.nuvio.tv.R
+import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.ui.theme.NuvioColors
+import com.nuvio.tv.ui.theme.NuvioTheme
+
+private const val KEY_REPEAT_THROTTLE_MS = 80L
+private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
+
+/**
+ * Netflix-style carousel row: expanded backdrop card on the left, poster strip on the right.
+ * The entire row is one focusable unit — D-pad left/right changes the selected index,
+ * wrapping around at boundaries. The expanded card never collapses or resizes.
+ */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun NetflixStyleRow(
+    title: String,
+    subtitle: String? = null,
+    items: List<MetaPreview>,
+    onItemClick: (MetaPreview) -> Unit,
+    onItemLongPress: ((MetaPreview) -> Unit)? = null,
+    isItemWatched: (MetaPreview) -> Boolean = { false },
+    posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
+    trailerPreviewUrl: String? = null,
+    trailerPreviewAudioUrl: String? = null,
+    onRequestTrailerPreview: (MetaPreview) -> Unit = {},
+    trailerEnabled: Boolean = false,
+    trailerMuted: Boolean = true,
+    onSeeAll: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    initialSelectedIndex: Int = 0,
+    onSelectedIndexChange: (Int) -> Unit = {},
+    onRowFocused: () -> Unit = {}
+) {
+    if (items.isEmpty()) return
+
+    val expandedCardHeight = posterCardStyle.height
+    val expandedCardWidth = expandedCardHeight * (16f / 9f)
+    val posterWidth = posterCardStyle.width
+    val posterHeight = posterCardStyle.height
+    val cardShape = remember(posterCardStyle.cornerRadius) { RoundedCornerShape(posterCardStyle.cornerRadius) }
+    val visiblePosterCount = 4
+
+    var selectedIndex by remember { mutableIntStateOf(initialSelectedIndex.coerceIn(0, items.size - 1)) }
+    var isFocused by remember { mutableStateOf(false) }
+    var longPressTriggered by remember { mutableStateOf(false) }
+    var lastKeyRepeatTime by remember { mutableStateOf(0L) }
+
+    // Notify parent of index changes
+    LaunchedEffect(selectedIndex) {
+        onSelectedIndexChange(selectedIndex)
+    }
+
+    // Request trailer preview when focused or index changes
+    LaunchedEffect(isFocused, selectedIndex) {
+        if (isFocused && trailerEnabled) {
+            onRequestTrailerPreview(items[selectedIndex])
+        }
+    }
+
+    // Notify parent when row gains focus
+    LaunchedEffect(isFocused) {
+        if (isFocused) onRowFocused()
+    }
+
+    val selectedItem = items[selectedIndex]
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Title row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 48.dp, end = 48.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = NuvioColors.TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = NuvioColors.TextTertiary
+                    )
+                }
+            }
+        }
+
+        // Card row — single focusable unit
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 48.dp)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                .focusable()
+                .onFocusChanged { state ->
+                    isFocused = state.isFocused || state.hasFocus
+                }
+                .onPreviewKeyEvent { event ->
+                    val native = event.nativeKeyEvent
+
+                    // Throttle key repeats
+                    if (native.action == AndroidKeyEvent.ACTION_DOWN && native.repeatCount > 0) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastKeyRepeatTime < KEY_REPEAT_THROTTLE_MS) {
+                            return@onPreviewKeyEvent true
+                        }
+                        lastKeyRepeatTime = now
+                    }
+
+                    if (native.action == AndroidKeyEvent.ACTION_DOWN) {
+                        when (native.keyCode) {
+                            AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                selectedIndex = (selectedIndex + 1) % items.size
+                                true
+                            }
+                            AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                                selectedIndex = (selectedIndex - 1 + items.size) % items.size
+                                true
+                            }
+                            AndroidKeyEvent.KEYCODE_MENU -> {
+                                if (onItemLongPress != null) {
+                                    longPressTriggered = true
+                                    onItemLongPress(items[selectedIndex])
+                                    true
+                                } else false
+                            }
+                            AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                            AndroidKeyEvent.KEYCODE_ENTER,
+                            AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                                val isLongPress = native.isLongPress || native.repeatCount > 0
+                                if (isLongPress && onItemLongPress != null) {
+                                    longPressTriggered = true
+                                    onItemLongPress(items[selectedIndex])
+                                    true
+                                } else false
+                            }
+                            else -> false
+                        }
+                    } else if (native.action == AndroidKeyEvent.ACTION_UP) {
+                        when (native.keyCode) {
+                            AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                            AndroidKeyEvent.KEYCODE_ENTER,
+                            AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                                if (longPressTriggered) {
+                                    longPressTriggered = false
+                                    true
+                                } else {
+                                    onItemClick(items[selectedIndex])
+                                    true
+                                }
+                            }
+                            else -> false
+                        }
+                    } else false
+                },
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            // Expanded card (left) — always expanded, shows backdrop for selected item
+            ExpandedCarouselCard(
+                item = selectedItem,
+                width = expandedCardWidth,
+                height = expandedCardHeight,
+                shape = cardShape,
+                isFocused = isFocused,
+                trailerPreviewUrl = if (trailerEnabled) trailerPreviewUrl else null,
+                trailerPreviewAudioUrl = if (trailerEnabled) trailerPreviewAudioUrl else null,
+                trailerMuted = trailerMuted,
+                selectedIndex = selectedIndex
+            )
+
+            // Poster strip (right) — shows next N items after selected
+            val actualPosterCount = minOf(visiblePosterCount, items.size - 1)
+            for (i in 1..actualPosterCount) {
+                val posterIndex = (selectedIndex + i) % items.size
+                val posterItem = items[posterIndex]
+                CarouselPosterCard(
+                    item = posterItem,
+                    width = posterWidth,
+                    height = posterHeight,
+                    shape = cardShape,
+                    isWatched = isItemWatched(posterItem)
+                )
+            }
+        }
+
+        // Meta row — below cards: genre · year · rating + description
+        ExpandedCardMeta(
+            item = selectedItem,
+            selectedIndex = selectedIndex,
+            modifier = Modifier.padding(start = 48.dp, end = 48.dp, top = 8.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ExpandedCarouselCard(
+    item: MetaPreview,
+    width: Dp,
+    height: Dp,
+    shape: RoundedCornerShape,
+    isFocused: Boolean,
+    trailerPreviewUrl: String?,
+    trailerPreviewAudioUrl: String?,
+    trailerMuted: Boolean,
+    selectedIndex: Int
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
+    val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
+
+    val focusRingColor = NuvioColors.FocusRing
+    val borderWidth = 2.dp
+    val borderWidthPx = with(density) { borderWidth.toPx() }
+
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .clip(shape)
+            .then(
+                if (isFocused) {
+                    Modifier.drawBehind {
+                        drawRoundRect(
+                            color = focusRingColor,
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = borderWidthPx)
+                        )
+                    }
+                } else Modifier
+            )
+    ) {
+        // Crossfade between backdrop images when selectedIndex changes
+        Crossfade(
+            targetState = selectedIndex,
+            animationSpec = tween(250),
+            label = "expandedCardCrossfade"
+        ) { index ->
+            val backdropUrl = item.backdropUrl
+            val imageModel = remember(backdropUrl, requestWidthPx, requestHeightPx) {
+                ImageRequest.Builder(context)
+                    .data(backdropUrl)
+                    .crossfade(false)
+                    .memoryCacheKey("netflix_backdrop_${backdropUrl}_${requestWidthPx}x${requestHeightPx}")
+                    .size(width = requestWidthPx, height = requestHeightPx)
+                    .build()
+            }
+            val bgColor = NuvioColors.BackgroundCard
+            val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (!backdropUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = imageModel,
+                        contentDescription = item.name,
+                        modifier = Modifier.fillMaxSize(),
+                        placeholder = backgroundPainter,
+                        error = backgroundPainter,
+                        fallback = backgroundPainter,
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(bgColor)
+                    )
+                }
+            }
+        }
+
+        // Trailer overlay
+        if (trailerPreviewUrl != null && isFocused) {
+            TrailerPlayer(
+                trailerUrl = trailerPreviewUrl,
+                trailerAudioUrl = trailerPreviewAudioUrl,
+                isPlaying = true,
+                onEnded = {},
+                modifier = Modifier.fillMaxSize(),
+                muted = trailerMuted
+            )
+        }
+
+        // Bottom gradient
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .height(96.dp)
+                .drawWithCache {
+                    val gradient = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.76f)
+                        ),
+                        startY = 0f,
+                        endY = size.height
+                    )
+                    onDrawBehind { drawRect(gradient) }
+                }
+        )
+
+        // Logo or title overlay
+        Crossfade(
+            targetState = selectedIndex,
+            animationSpec = tween(250),
+            label = "expandedTitleCrossfade"
+        ) { _ ->
+            val logoRequestHeightPx = remember(density) { with(density) { 48.dp.roundToPx() } }
+            var logoLoadFailed by remember(item.logo) { mutableStateOf(false) }
+            val showLogo = !item.logo.isNullOrBlank() && !logoLoadFailed
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                if (showLogo) {
+                    val logoModel = remember(item.logo, requestWidthPx, logoRequestHeightPx) {
+                        ImageRequest.Builder(context)
+                            .data(item.logo)
+                            .crossfade(false)
+                            .size(width = requestWidthPx, height = logoRequestHeightPx)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = logoModel,
+                        contentDescription = item.name,
+                        onError = { logoLoadFailed = true },
+                        modifier = Modifier
+                            .height(48.dp)
+                            .fillMaxWidth(),
+                        contentScale = ContentScale.Fit,
+                        alignment = Alignment.CenterStart
+                    )
+                } else {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CarouselPosterCard(
+    item: MetaPreview,
+    width: Dp,
+    height: Dp,
+    shape: RoundedCornerShape,
+    isWatched: Boolean
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
+    val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
+    val bgColor = NuvioColors.BackgroundCard
+    val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
+
+    val imageModel = remember(item.poster, requestWidthPx, requestHeightPx) {
+        ImageRequest.Builder(context)
+            .data(item.poster)
+            .crossfade(false)
+            .memoryCacheKey("netflix_poster_${item.poster}_${requestWidthPx}x${requestHeightPx}")
+            .size(width = requestWidthPx, height = requestHeightPx)
+            .build()
+    }
+
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(height)
+            .clip(shape)
+    ) {
+        if (!item.poster.isNullOrBlank()) {
+            AsyncImage(
+                model = imageModel,
+                contentDescription = item.name,
+                modifier = Modifier.fillMaxSize(),
+                placeholder = backgroundPainter,
+                error = backgroundPainter,
+                fallback = backgroundPainter,
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            MonochromePosterPlaceholder()
+        }
+
+        if (isWatched) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = stringResource(R.string.episodes_cd_watched),
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 6.dp, top = 6.dp)
+                    .zIndex(2f)
+                    .height(18.dp)
+                    .width(18.dp)
+                    .drawBehind {
+                        drawCircle(
+                            color = Color.Black,
+                            radius = size.minDimension / 2f + 1.5f
+                        )
+                    }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ExpandedCardMeta(
+    item: MetaPreview,
+    selectedIndex: Int,
+    modifier: Modifier = Modifier
+) {
+    val metaTokens = remember(item.rawType, item.genres, item.releaseInfo, item.imdbRating) {
+        buildList {
+            add(item.apiType.replaceFirstChar { ch -> ch.uppercase() })
+            item.genres.firstOrNull()?.let { add(it) }
+            item.releaseInfo
+                ?.let { YEAR_REGEX.find(it)?.value }
+                ?.let { add(it) }
+            item.imdbRating?.let { add(String.format("%.1f", it)) }
+        }
+    }
+
+    Crossfade(
+        targetState = selectedIndex,
+        animationSpec = tween(250),
+        label = "metaCrossfade"
+    ) { _ ->
+        Column(modifier = modifier) {
+            if (metaTokens.isNotEmpty()) {
+                Text(
+                    text = metaTokens.joinToString("  •  "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NuvioTheme.extendedColors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            item.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NuvioColors.TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
