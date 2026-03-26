@@ -64,7 +64,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.delay
 
-private const val KEY_REPEAT_THROTTLE_MS = 80L
+private const val KEY_REPEAT_THROTTLE_MS = 150L
 private const val ITEM_FOCUS_DEBOUNCE_MS = 130L
 private const val TRAILER_REQUEST_DEBOUNCE_MS = 50L
 private const val SLIDE_ANIM_MS = 300
@@ -197,11 +197,15 @@ fun NetflixStyleRow(
                 .onPreviewKeyEvent { event ->
                     val native = event.nativeKeyEvent
 
-                    // Throttle key repeats
-                    if (native.action == AndroidKeyEvent.ACTION_DOWN && native.repeatCount > 0) {
+                    // Throttle ALL D-pad left/right presses (not just repeats) to prevent
+                    // rapid index changes that cause AnimatedContent to get into a runaway loop
+                    if (native.action == AndroidKeyEvent.ACTION_DOWN &&
+                        (native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT ||
+                         native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT)
+                    ) {
                         val now = System.currentTimeMillis()
                         if (now - lastKeyRepeatTime < KEY_REPEAT_THROTTLE_MS) {
-                            return@onPreviewKeyEvent true
+                            return@onPreviewKeyEvent true // consume — too fast
                         }
                         lastKeyRepeatTime = now
                     }
@@ -278,9 +282,6 @@ fun NetflixStyleRow(
             }
             if (actualPosterCount > 0) {
                 val startOffset = if (showSelectedPosterInStrip) 0 else 1
-                val posterIndices = (0 until actualPosterCount).map { i ->
-                    (selectedIndex + startOffset + i) % items.size
-                }
                 // Fixed-width container prevents gap jitter between expanded card and poster strip
                 val posterStripWidth = posterWidth * actualPosterCount + 12.dp * (actualPosterCount - 1)
 
@@ -289,11 +290,12 @@ fun NetflixStyleRow(
                         .width(posterStripWidth)
                         .height(posterHeight)
                 ) {
+                    // Key on selectedIndex (simple Int) — keying on List<Int> causes
+                    // AnimatedContent to get into runaway animation loops on rapid scrolling
                     AnimatedContent(
-                        targetState = posterIndices,
+                        targetState = selectedIndex,
                         transitionSpec = {
                             val direction = if (slideRight) 1 else -1
-                            // Combine fade with slide: fade masks any gap, slide gives direction
                             (fadeIn(tween(SLIDE_ANIM_MS / 2)) + slideInHorizontally(
                                 animationSpec = tween(SLIDE_ANIM_MS),
                                 initialOffsetX = { fullWidth -> direction * fullWidth / 4 }
@@ -303,11 +305,14 @@ fun NetflixStyleRow(
                             )) using SizeTransform(clip = true)
                         },
                         label = "posterSlide"
-                    ) { indices ->
+                    ) { animatedSelectedIndex ->
+                        val posterIndices = (0 until actualPosterCount).map { i ->
+                            (animatedSelectedIndex + startOffset + i) % items.size
+                        }
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            indices.forEach { posterIndex ->
+                            posterIndices.forEach { posterIndex ->
                                 val posterItem = items[posterIndex]
                                 CarouselPosterCard(
                                     item = posterItem,
@@ -315,7 +320,7 @@ fun NetflixStyleRow(
                                     height = posterHeight,
                                     shape = cardShape,
                                     isWatched = isItemWatched(posterItem),
-                                    isSelected = highlightSelectedPoster && isFocused && posterIndex == selectedIndex
+                                    isSelected = highlightSelectedPoster && isFocused && posterIndex == animatedSelectedIndex
                                 )
                             }
                         }
@@ -437,7 +442,8 @@ private fun ExpandedCarouselCard(
                     isPlaying = true,
                     onEnded = {},
                     modifier = Modifier.fillMaxSize(),
-                    muted = trailerMuted
+                    muted = trailerMuted,
+                    cropToFill = true
                 )
             }
         }
