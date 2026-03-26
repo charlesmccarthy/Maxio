@@ -447,6 +447,36 @@ private fun ExpandedCarouselCard(
                     overscanZoom = 1.35f
                 )
             }
+
+            // Logo/title overlay — ON TOP of both backdrop and trailer (Netflix-style)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(96.dp)
+                    .drawWithCache {
+                        val gradient = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.8f)
+                            ),
+                            startY = 0f,
+                            endY = size.height
+                        )
+                        onDrawBehind { drawRect(gradient) }
+                    }
+            )
+            Crossfade(
+                targetState = selectedIndex,
+                animationSpec = tween(SLIDE_ANIM_MS),
+                label = "titleOverlayFade"
+            ) { animatedIndex ->
+                ExpandedCardTitle(
+                    item = items[animatedIndex],
+                    context = context,
+                    requestWidthPx = requestWidthPx
+                )
+            }
         }
     }
 }
