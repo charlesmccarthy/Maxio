@@ -102,11 +102,10 @@ fun NetflixStyleRow(
 ) {
     if (items.isEmpty()) return
 
-    val expandedCardHeight = posterCardStyle.height
-    // ~45% of typical 1920dp TV screen minus horizontal padding (48dp * 2)
-    val expandedCardWidth = 780.dp
+    val expandedCardHeight = posterCardStyle.height * 1.15f
+    val expandedCardWidth = 390.dp
     val posterWidth = posterCardStyle.width
-    val posterHeight = posterCardStyle.height
+    val posterHeight = posterCardStyle.height * 1.15f
     val cardShape = remember(posterCardStyle.cornerRadius) { RoundedCornerShape(posterCardStyle.cornerRadius) }
     val visiblePosterCount = 4
 
