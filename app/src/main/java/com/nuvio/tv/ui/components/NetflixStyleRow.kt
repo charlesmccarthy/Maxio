@@ -65,6 +65,7 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.delay
 
 private const val KEY_REPEAT_THROTTLE_MS = 80L
+private const val ITEM_FOCUS_DEBOUNCE_MS = 130L
 private const val TRAILER_REQUEST_DEBOUNCE_MS = 100L
 private const val SLIDE_ANIM_MS = 300
 private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
@@ -86,7 +87,10 @@ fun NetflixStyleRow(
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
     trailerPreviewUrls: Map<String, String> = emptyMap(),
     trailerPreviewAudioUrls: Map<String, String> = emptyMap(),
+    showSelectedPosterInStrip: Boolean = false,
+    highlightSelectedPoster: Boolean = false,
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
+    onItemFocus: (MetaPreview) -> Unit = {},
     trailerEnabled: Boolean = false,
     trailerMuted: Boolean = true,
     onSeeAll: (() -> Unit)? = null,
@@ -111,6 +115,7 @@ fun NetflixStyleRow(
     var lastKeyRepeatTime by remember { mutableStateOf(0L) }
     // Track slide direction for animation: true = moving right (slide left), false = moving left
     var slideRight by remember { mutableStateOf(true) }
+    val latestOnItemFocus by androidx.compose.runtime.rememberUpdatedState(onItemFocus)
 
     // Notify parent of index changes
     LaunchedEffect(selectedIndex) {
@@ -133,6 +138,14 @@ fun NetflixStyleRow(
             if (isFocused) {
                 onRequestTrailerPreview(items[selectedIndex])
             }
+        }
+    }
+
+    LaunchedEffect(isFocused, selectedIndex) {
+        if (!isFocused) return@LaunchedEffect
+        delay(ITEM_FOCUS_DEBOUNCE_MS)
+        if (isFocused) {
+            latestOnItemFocus(items[selectedIndex])
         }
     }
 
@@ -258,9 +271,16 @@ fun NetflixStyleRow(
             )
 
             // Poster strip (right) — fade+slide when index changes
-            val actualPosterCount = minOf(visiblePosterCount, items.size - 1)
+            val actualPosterCount = if (showSelectedPosterInStrip) {
+                minOf(visiblePosterCount, items.size)
+            } else {
+                minOf(visiblePosterCount, items.size - 1)
+            }
             if (actualPosterCount > 0) {
-                val posterIndices = (1..actualPosterCount).map { i -> (selectedIndex + i) % items.size }
+                val startOffset = if (showSelectedPosterInStrip) 0 else 1
+                val posterIndices = (0 until actualPosterCount).map { i ->
+                    (selectedIndex + startOffset + i) % items.size
+                }
                 // Fixed-width container prevents gap jitter between expanded card and poster strip
                 val posterStripWidth = posterWidth * actualPosterCount + 12.dp * (actualPosterCount - 1)
 
@@ -294,7 +314,8 @@ fun NetflixStyleRow(
                                     width = posterWidth,
                                     height = posterHeight,
                                     shape = cardShape,
-                                    isWatched = isItemWatched(posterItem)
+                                    isWatched = isItemWatched(posterItem),
+                                    isSelected = highlightSelectedPoster && isFocused && posterIndex == selectedIndex
                                 )
                             }
                         }
@@ -477,7 +498,8 @@ private fun CarouselPosterCard(
     width: Dp,
     height: Dp,
     shape: RoundedCornerShape,
-    isWatched: Boolean
+    isWatched: Boolean,
+    isSelected: Boolean = false
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -499,6 +521,11 @@ private fun CarouselPosterCard(
         modifier = Modifier
             .width(width)
             .height(height)
+            .border(
+                width = 2.dp,
+                color = if (isSelected) Color.White else Color.Transparent,
+                shape = shape
+            )
             .clip(shape)
     ) {
         if (!item.poster.isNullOrBlank()) {

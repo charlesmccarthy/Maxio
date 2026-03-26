@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,7 +100,7 @@ fun ClassicHomeContent(
     }
 
     // Store selected index per row for Netflix carousel state
-    val rowSelectedIndices = remember { mutableMapOf<String, Int>() }
+    val rowSelectedIndices = remember { mutableStateMapOf<String, Int>() }
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
 
     var restoringFocus by remember { mutableStateOf(focusState.hasSavedFocus) }
@@ -275,10 +276,6 @@ fun ClassicHomeContent(
                 else -> savedIndex.coerceIn(0, (catalogRow.items.size - 1).coerceAtLeast(0))
             }
 
-            // Get the selected item for this row to pass its trailer URLs
-            val currentSelectedIndex = rowSelectedIndices[catalogKey] ?: initialIndex
-            val selectedItem = catalogRow.items.getOrNull(currentSelectedIndex)
-
             // Request initial focus if needed
             LaunchedEffect(shouldRestoreFocus, shouldInitialFocusFirstCatalogRow) {
                 if (shouldRestoreFocus || shouldInitialFocusFirstCatalogRow) {
@@ -302,9 +299,12 @@ fun ClassicHomeContent(
                 },
                 isItemWatched = isCatalogItemWatched,
                 posterCardStyle = posterCardStyle,
-                trailerPreviewUrl = selectedItem?.let { trailerPreviewUrls[it.id] },
-                trailerPreviewAudioUrl = selectedItem?.let { trailerPreviewAudioUrls[it.id] },
+                trailerPreviewUrls = trailerPreviewUrls,
+                trailerPreviewAudioUrls = trailerPreviewAudioUrls,
+                showSelectedPosterInStrip = true,
+                highlightSelectedPoster = true,
                 onRequestTrailerPreview = onRequestTrailerPreview,
+                onItemFocus = onItemFocus,
                 trailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
                 trailerMuted = uiState.focusedPosterBackdropTrailerMuted,
                 focusRequester = rowFocusRequester,
