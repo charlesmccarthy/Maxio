@@ -309,12 +309,23 @@ class DiscoveryBrowseViewModel @Inject constructor(
         startYear: String,
         language: String?
     ): List<BrowseRow> = coroutineScope {
-        val mediaType = if (isMovie) "movie" else "series"
         val startYearInt = startYear.toInt()
         val endYear = (startYearInt + 9).toString()
         val midYear = startYearInt + 5
 
-        // Parallel fetch curated categories for the decade
+        // Fetch genres + curated rows in parallel
+        val genresDeferred = async {
+            try {
+                val response = if (isMovie) {
+                    tmdbApi.getMovieGenres(apiKey = TMDB_API_KEY, language = language)
+                } else {
+                    tmdbApi.getTvGenres(apiKey = TMDB_API_KEY, language = language)
+                }
+                response.body()?.genres.orEmpty()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
         val bestDeferred = async {
             fetchDecadeDiscover(isMovie, startYear, endYear, language, "vote_average.desc", voteCountGte = 300)
         }
@@ -332,18 +343,44 @@ class DiscoveryBrowseViewModel @Inject constructor(
         val popular = popularDeferred.await()
         val early = earlyDeferred.await()
         val late = lateDeferred.await()
+        val genres = genresDeferred.await()
+
+        // Fetch genre rows in parallel (capped to avoid too many API calls)
+        val genreRows = genres.map { genre ->
+            async {
+                try {
+                    val items = fetchDecadeDiscover(
+                        isMovie, startYear, endYear, language,
+                        "popularity.desc", voteCountGte = 30, genreId = genre.id.toString()
+                    )
+                    BrowseRow(genre.name, items)
+                } catch (_: Exception) {
+                    BrowseRow(genre.name, emptyList())
+                }
+            }
+        }.awaitAll()
 
         val seen = mutableSetOf<String>()
         fun dedup(items: List<MetaPreview>): List<MetaPreview> {
             return items.filter { seen.add(it.id) }
         }
 
-        listOf(
+        val rows = mutableListOf(
             BrowseRow("Best of the ${startYear}s", dedup(best)),
             BrowseRow("Most Popular", dedup(popular)),
             BrowseRow("Early ${startYear}s (${startYear}–${midYear - 1})", dedup(early)),
             BrowseRow("Late ${startYear}s (${midYear}–${endYear})", dedup(late))
         )
+
+        // Add genre rows after the curated rows
+        for (row in genreRows) {
+            val dedupedItems = dedup(row.items)
+            if (dedupedItems.isNotEmpty()) {
+                rows.add(BrowseRow(row.title, dedupedItems))
+            }
+        }
+
+        rows
     }
 
     private suspend fun fetchGenreDiscover(
@@ -392,7 +429,8 @@ class DiscoveryBrowseViewModel @Inject constructor(
         endYear: String,
         language: String?,
         sortBy: String,
-        voteCountGte: Int = 100
+        voteCountGte: Int = 100,
+        genreId: String? = null
     ): List<MetaPreview> {
         val mediaType = if (isMovie) "movie" else "series"
         val response = if (isMovie) {
@@ -403,7 +441,8 @@ class DiscoveryBrowseViewModel @Inject constructor(
                 sortBy = sortBy,
                 primaryReleaseDateGte = "$startYear-01-01",
                 primaryReleaseDateLte = "$endYear-12-31",
-                voteCountGte = voteCountGte
+                voteCountGte = voteCountGte,
+                withGenres = genreId
             )
         } else {
             tmdbApi.discoverTv(
@@ -413,7 +452,8 @@ class DiscoveryBrowseViewModel @Inject constructor(
                 sortBy = sortBy,
                 firstAirDateGte = "$startYear-01-01",
                 firstAirDateLte = "$endYear-12-31",
-                voteCountGte = voteCountGte
+                voteCountGte = voteCountGte,
+                withGenres = genreId
             )
         }
         return response.body()?.results.orEmpty().map { it.toBrowseMetaPreview(mediaType) }
