@@ -241,6 +241,10 @@ fun TrailerPlayer(
                     }
                 },
                 update = { view ->
+                    // Re-attach player when ExoPlayer instance changes (e.g. URL change on direction reversal)
+                    if (view.player !== trailerPlayer) {
+                        view.player = trailerPlayer
+                    }
                     view.resizeMode = if (cropToFill) {
                         AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     } else {
