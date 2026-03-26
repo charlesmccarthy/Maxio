@@ -128,7 +128,12 @@ fun DiscoveryScreen(
                         items = row.items,
                         onItemClick = { item ->
                             viewModel.onEvent(DiscoveryEvent.OnItemClick(item, onNavigateToDetail))
-                        }
+                        },
+                        trailerPreviewUrls = viewModel.trailerPreviewUrls,
+                        trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                        trailerEnabled = viewModel.trailerEnabled,
+                        trailerMuted = viewModel.trailerMuted,
+                        onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) }
                     )
                 }
 

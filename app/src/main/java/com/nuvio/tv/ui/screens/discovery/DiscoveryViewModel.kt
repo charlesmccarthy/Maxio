@@ -4,10 +4,13 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.BuildConfig
+import androidx.compose.runtime.mutableStateMapOf
 import com.nuvio.tv.core.tmdb.TmdbService
+import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.local.TraktAuthDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
+import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.data.remote.api.TmdbDiscoverResult
 import com.nuvio.tv.data.remote.api.TmdbGenre
 import com.nuvio.tv.data.remote.api.TraktApi
@@ -49,7 +52,9 @@ class DiscoveryViewModel @Inject constructor(
     private val traktAuthService: TraktAuthService,
     private val traktAuthDataStore: TraktAuthDataStore,
     private val tmdbService: TmdbService,
-    private val tmdbSettingsDataStore: TmdbSettingsDataStore
+    private val tmdbSettingsDataStore: TmdbSettingsDataStore,
+    private val trailerService: TrailerService,
+    private val layoutPreferenceDataStore: LayoutPreferenceDataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiscoveryUiState())
@@ -58,8 +63,59 @@ class DiscoveryViewModel @Inject constructor(
     private var loadJob: Job? = null
     private var surpriseMeJob: Job? = null
 
+    // Trailer preview support
+    val trailerPreviewUrls = mutableStateMapOf<String, String>()
+    val trailerPreviewAudioUrls = mutableStateMapOf<String, String>()
+    private val trailerNegativeCache = mutableSetOf<String>()
+    private val trailerLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    var trailerEnabled: Boolean = false
+        private set
+    var trailerMuted: Boolean = true
+        private set
+
     init {
         loadContent()
+        observeTrailerPrefs()
+    }
+
+    private fun observeTrailerPrefs() {
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(
+                layoutPreferenceDataStore.focusedPosterBackdropTrailerEnabled,
+                layoutPreferenceDataStore.focusedPosterBackdropTrailerMuted
+            ) { enabled, muted -> enabled to muted }
+                .collect { (enabled, muted) ->
+                    trailerEnabled = enabled
+                    trailerMuted = muted
+                }
+        }
+    }
+
+    fun requestTrailerPreview(item: MetaPreview) {
+        val itemId = item.id
+        if (trailerNegativeCache.contains(itemId)) return
+        if (trailerPreviewUrls.containsKey(itemId)) return
+        if (!trailerLoadingIds.add(itemId)) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tmdbId = runCatching { tmdbService.ensureTmdbId(itemId, item.apiType) }.getOrNull()
+                val yearStr = item.releaseInfo?.let { Regex("""\b(19|20)\d{2}\b""").find(it)?.value }
+                val source = trailerService.getTrailerPlaybackSource(
+                    title = item.name, year = yearStr, tmdbId = tmdbId, type = item.apiType
+                )
+                if (source?.videoUrl != null) {
+                    trailerPreviewUrls[itemId] = source.videoUrl
+                    source.audioUrl?.takeIf { it.isNotBlank() }?.let { trailerPreviewAudioUrls[itemId] = it }
+                } else {
+                    trailerNegativeCache.add(itemId)
+                }
+            } catch (_: Exception) {
+                trailerNegativeCache.add(itemId)
+            } finally {
+                trailerLoadingIds.remove(itemId)
+            }
+        }
     }
 
     fun onEvent(event: DiscoveryEvent) {

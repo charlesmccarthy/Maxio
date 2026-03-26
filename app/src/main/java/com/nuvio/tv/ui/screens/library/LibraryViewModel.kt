@@ -1,9 +1,14 @@
 package com.nuvio.tv.ui.screens.library
 
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.repository.TraktLibraryService
+import com.nuvio.tv.data.trailer.TrailerService
+import com.nuvio.tv.domain.model.MetaPreview
+import kotlinx.coroutines.Dispatchers
 import com.nuvio.tv.domain.model.LibraryEntry
 import com.nuvio.tv.domain.model.LibraryListTab
 import com.nuvio.tv.domain.model.LibrarySourceMode
@@ -116,7 +121,9 @@ data class LibraryUiState(
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
-    private val layoutPreferenceDataStore: LayoutPreferenceDataStore
+    private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val trailerService: TrailerService,
+    private val tmdbService: TmdbService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -124,9 +131,60 @@ class LibraryViewModel @Inject constructor(
 
     private var messageClearJob: Job? = null
 
+    // Trailer preview support
+    val trailerPreviewUrls = mutableStateMapOf<String, String>()
+    val trailerPreviewAudioUrls = mutableStateMapOf<String, String>()
+    private val trailerNegativeCache = mutableSetOf<String>()
+    private val trailerLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    var trailerEnabled: Boolean = false
+        private set
+    var trailerMuted: Boolean = true
+        private set
+
     init {
         observeLayoutPreferences()
         observeLibraryData()
+        observeTrailerPrefs()
+    }
+
+    private fun observeTrailerPrefs() {
+        viewModelScope.launch {
+            combine(
+                layoutPreferenceDataStore.focusedPosterBackdropTrailerEnabled,
+                layoutPreferenceDataStore.focusedPosterBackdropTrailerMuted
+            ) { enabled, muted -> enabled to muted }
+                .collect { (enabled, muted) ->
+                    trailerEnabled = enabled
+                    trailerMuted = muted
+                }
+        }
+    }
+
+    fun requestTrailerPreview(item: MetaPreview) {
+        val itemId = item.id
+        if (trailerNegativeCache.contains(itemId)) return
+        if (trailerPreviewUrls.containsKey(itemId)) return
+        if (!trailerLoadingIds.add(itemId)) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tmdbId = runCatching { tmdbService.ensureTmdbId(itemId, item.apiType) }.getOrNull()
+                val yearStr = item.releaseInfo?.let { Regex("""\b(19|20)\d{2}\b""").find(it)?.value }
+                val source = trailerService.getTrailerPlaybackSource(
+                    title = item.name, year = yearStr, tmdbId = tmdbId, type = item.apiType
+                )
+                if (source?.videoUrl != null) {
+                    trailerPreviewUrls[itemId] = source.videoUrl
+                    source.audioUrl?.takeIf { it.isNotBlank() }?.let { trailerPreviewAudioUrls[itemId] = it }
+                } else {
+                    trailerNegativeCache.add(itemId)
+                }
+            } catch (_: Exception) {
+                trailerNegativeCache.add(itemId)
+            } finally {
+                trailerLoadingIds.remove(itemId)
+            }
+        }
     }
 
     fun onScreenEntered() {

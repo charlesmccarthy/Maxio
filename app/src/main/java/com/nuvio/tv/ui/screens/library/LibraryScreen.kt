@@ -284,7 +284,12 @@ fun LibraryScreen(
                     val entry = group.items.firstOrNull { it.id == item.id }
                     onNavigateToDetail(item.id, item.rawType, entry?.addonBaseUrl)
                 },
-                posterCardStyle = posterCardStyle
+                posterCardStyle = posterCardStyle,
+                trailerPreviewUrls = viewModel.trailerPreviewUrls,
+                trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                trailerEnabled = viewModel.trailerEnabled,
+                trailerMuted = viewModel.trailerMuted,
+                onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) }
             )
         }
 
