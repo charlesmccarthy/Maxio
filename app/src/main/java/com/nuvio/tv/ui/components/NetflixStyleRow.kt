@@ -274,19 +274,17 @@ fun NetflixStyleRow(
                     trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
                     trailerMuted = trailerMuted
                 )
-                // DEBUG overlay — REMOVE after fixing
-                if (isFocused) {
-                    Text(
-                        text = debugTrailerState,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.Yellow,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(4.dp)
-                            .background(Color.Black.copy(alpha = 0.7f))
-                            .padding(2.dp)
-                    )
-                }
+                // DEBUG overlay — ALWAYS visible — REMOVE after fixing
+                Text(
+                    text = debugTrailerState,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.Yellow,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
 
             // Poster strip (right) — fade+slide when index changes
