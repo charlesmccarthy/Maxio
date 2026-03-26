@@ -64,10 +64,10 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.delay
 
-private const val KEY_REPEAT_THROTTLE_MS = 150L
+private const val KEY_REPEAT_THROTTLE_MS = 200L
 private const val ITEM_FOCUS_DEBOUNCE_MS = 130L
 private const val TRAILER_REQUEST_DEBOUNCE_MS = 50L
-private const val SLIDE_ANIM_MS = 300
+private const val SLIDE_ANIM_MS = 180
 private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
 
 /**
@@ -443,7 +443,8 @@ private fun ExpandedCarouselCard(
                     onEnded = {},
                     modifier = Modifier.fillMaxSize(),
                     muted = trailerMuted,
-                    cropToFill = true
+                    cropToFill = true,
+                    overscanZoom = 1.35f
                 )
             }
         }
