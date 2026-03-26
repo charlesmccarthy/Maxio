@@ -42,6 +42,7 @@ import com.nuvio.tv.domain.model.LibraryListTab
 import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.ErrorState
+import com.nuvio.tv.ui.components.IntroVideoPlayer
 import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.components.PosterCardDefaults
@@ -91,6 +92,7 @@ fun HomeScreen(
     var showHomeContentWithAnimation by rememberSaveable { mutableStateOf(false) }
     var hasReleasedStartupCwGate by rememberSaveable { mutableStateOf(false) }
     var startupCwGateTimedOut by rememberSaveable { mutableStateOf(false) }
+    var introVideoFinished by rememberSaveable { mutableStateOf(false) }
     var posterOptionsTarget by remember { mutableStateOf<HomePosterOptionsTarget?>(null) }
 
     // Stable lambdas — captured via rememberUpdatedState so they never cause
@@ -146,11 +148,17 @@ fun HomeScreen(
 
         when {
             uiState.isLoading && !hasAnyContent -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    LoadingIndicator()
+                if (!introVideoFinished) {
+                    IntroVideoPlayer(
+                        onFinished = { introVideoFinished = true }
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingIndicator()
+                    }
                 }
             }
 
@@ -201,11 +209,17 @@ fun HomeScreen(
                     }
                 }
                 if (shouldShowLoadingGate) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LoadingIndicator()
+                    if (!introVideoFinished) {
+                        IntroVideoPlayer(
+                            onFinished = { introVideoFinished = true }
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator()
+                        }
                     }
                 } else {
                     AnimatedVisibility(
