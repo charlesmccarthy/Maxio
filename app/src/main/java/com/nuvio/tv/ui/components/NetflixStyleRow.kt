@@ -11,6 +11,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,16 +38,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -88,8 +84,8 @@ fun NetflixStyleRow(
     onItemLongPress: ((MetaPreview) -> Unit)? = null,
     isItemWatched: (MetaPreview) -> Boolean = { false },
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
-    trailerPreviewUrl: String? = null,
-    trailerPreviewAudioUrl: String? = null,
+    trailerPreviewUrls: Map<String, String> = emptyMap(),
+    trailerPreviewAudioUrls: Map<String, String> = emptyMap(),
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     trailerEnabled: Boolean = false,
     trailerMuted: Boolean = true,
@@ -121,6 +117,13 @@ fun NetflixStyleRow(
         onSelectedIndexChange(selectedIndex)
     }
 
+    LaunchedEffect(initialSelectedIndex, items.size) {
+        val clampedIndex = initialSelectedIndex.coerceIn(0, items.size - 1)
+        if (selectedIndex != clampedIndex) {
+            selectedIndex = clampedIndex
+        }
+    }
+
     // Request trailer preview with debounce when focused and index changes.
     // trailerEnabled must be a key because it loads asynchronously (300ms debounce
     // on preferences flow) — without it, the effect fires once with false and never retries.
@@ -137,6 +140,9 @@ fun NetflixStyleRow(
     LaunchedEffect(isFocused) {
         if (isFocused) onRowFocused()
     }
+
+    val selectedTrailerPreviewUrl = trailerPreviewUrls[items[selectedIndex].id]
+    val selectedTrailerPreviewAudioUrl = trailerPreviewAudioUrls[items[selectedIndex].id]
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Title row
@@ -245,10 +251,9 @@ fun NetflixStyleRow(
                 width = expandedCardWidth,
                 height = expandedCardHeight,
                 shape = cardShape,
-                cornerRadius = posterCardStyle.cornerRadius,
                 isFocused = isFocused,
-                trailerPreviewUrl = if (trailerEnabled) trailerPreviewUrl else null,
-                trailerPreviewAudioUrl = if (trailerEnabled) trailerPreviewAudioUrl else null,
+                trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
+                trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
                 trailerMuted = trailerMuted
             )
 
@@ -315,7 +320,6 @@ private fun ExpandedCarouselCard(
     width: Dp,
     height: Dp,
     shape: RoundedCornerShape,
-    cornerRadius: Dp,
     isFocused: Boolean,
     trailerPreviewUrl: String?,
     trailerPreviewAudioUrl: String?,
@@ -326,35 +330,15 @@ private fun ExpandedCarouselCard(
     val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
     val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
 
-    // Outer Box: NOT clipped — draws focus ring on top of everything
-    val focusColor = NuvioColors.FocusRing
-    val cornerRadiusPx = with(density) { cornerRadius.toPx() }
-
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
-            .drawWithContent {
-                drawContent()
-                // Draw focus ring ON TOP of all content (outside clip so it's not clipped)
-                if (isFocused) {
-                    val strokeWidth = 3.dp.toPx()
-                    val halfStroke = strokeWidth / 2
-                    drawRoundRect(
-                        color = focusColor,
-                        topLeft = Offset(halfStroke, halfStroke),
-                        size = Size(
-                            size.width - strokeWidth,
-                            size.height - strokeWidth
-                        ),
-                        cornerRadius = CornerRadius(
-                            cornerRadiusPx - halfStroke,
-                            cornerRadiusPx - halfStroke
-                        ),
-                        style = Stroke(width = strokeWidth)
-                    )
-                }
-            }
+            .border(
+                width = 2.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
+                shape = shape
+            )
     ) {
         // Inner Box: clipped — contains all visual content (backdrop, trailer, etc.)
         Box(
