@@ -232,7 +232,7 @@ class DiscoveryBrowseViewModel @Inject constructor(
 
                 _uiState.update {
                     it.copy(
-                        rows = rows.filter { row -> row.items.isNotEmpty() },
+                        rows = rows.filter { row -> row.items.size >= 5 },
                         isLoading = false,
                         error = null
                     )
@@ -257,21 +257,23 @@ class DiscoveryBrowseViewModel @Inject constructor(
         val mediaType = if (isMovie) "movie" else "series"
         val currentYear = java.time.Year.now().value
 
-        // Parallel fetch all curated categories
-        val popularDeferred = async { fetchGenreDiscover(isMovie, genreId, language, "popularity.desc", voteCountGte = 50) }
-        val highestRatedDeferred = async { fetchGenreDiscover(isMovie, genreId, language, "vote_average.desc", voteCountGte = 300, voteAverageGte = 7.0) }
+        // Parallel fetch all curated categories — 5 pages each for deep results
+        val popularDeferred = async { fetchGenreDiscover(isMovie, genreId, language, "popularity.desc", voteCountGte = 50, pages = 5) }
+        val highestRatedDeferred = async { fetchGenreDiscover(isMovie, genreId, language, "vote_average.desc", voteCountGte = 300, voteAverageGte = 7.0, pages = 5) }
         val newReleasesDeferred = async {
             fetchGenreDiscover(
                 isMovie, genreId, language, if (isMovie) "primary_release_date.desc" else "first_air_date.desc",
                 voteCountGte = 20,
-                releaseDateGte = "${currentYear - 2}-01-01"
+                releaseDateGte = "${currentYear - 2}-01-01",
+                pages = 3
             )
         }
         val classicDeferred = async {
             fetchGenreDiscover(
                 isMovie, genreId, language, "vote_average.desc",
                 voteCountGte = 500,
-                releaseDateLte = "2005-12-31"
+                releaseDateLte = "2005-12-31",
+                pages = 5
             )
         }
         val hiddenGemsDeferred = async {
@@ -279,7 +281,7 @@ class DiscoveryBrowseViewModel @Inject constructor(
                 isMovie, genreId, language, "vote_average.desc",
                 voteCountGte = 50,
                 voteAverageGte = 7.5,
-                page = 3
+                pages = 3
             )
         }
 
@@ -345,13 +347,14 @@ class DiscoveryBrowseViewModel @Inject constructor(
         val late = lateDeferred.await()
         val genres = genresDeferred.await()
 
-        // Fetch genre rows in parallel (capped to avoid too many API calls)
+        // Fetch genre rows in parallel — 5 pages each for ~100 items before dedup
         val genreRows = genres.map { genre ->
             async {
                 try {
                     val items = fetchDecadeDiscover(
                         isMovie, startYear, endYear, language,
-                        "popularity.desc", voteCountGte = 30, genreId = genre.id.toString()
+                        "popularity.desc", voteCountGte = 10, genreId = genre.id.toString(),
+                        pages = 5
                     )
                     BrowseRow(genre.name, items)
                 } catch (_: Exception) {
@@ -392,35 +395,43 @@ class DiscoveryBrowseViewModel @Inject constructor(
         voteAverageGte: Double? = null,
         releaseDateGte: String? = null,
         releaseDateLte: String? = null,
-        page: Int = 1
-    ): List<MetaPreview> {
+        pages: Int = 1
+    ): List<MetaPreview> = coroutineScope {
         val mediaType = if (isMovie) "movie" else "series"
-        val response = if (isMovie) {
-            tmdbApi.discoverMovies(
-                apiKey = TMDB_API_KEY,
-                language = language,
-                page = page,
-                sortBy = sortBy,
-                withGenres = genreId,
-                voteCountGte = voteCountGte,
-                voteAverageGte = voteAverageGte,
-                primaryReleaseDateGte = releaseDateGte,
-                primaryReleaseDateLte = releaseDateLte
-            )
-        } else {
-            tmdbApi.discoverTv(
-                apiKey = TMDB_API_KEY,
-                language = language,
-                page = page,
-                sortBy = sortBy,
-                withGenres = genreId,
-                voteCountGte = voteCountGte,
-                voteAverageGte = voteAverageGte,
-                firstAirDateGte = releaseDateGte,
-                firstAirDateLte = releaseDateLte
-            )
-        }
-        return response.body()?.results.orEmpty().map { it.toBrowseMetaPreview(mediaType) }
+        (1..pages).map { page ->
+            async {
+                try {
+                    val response = if (isMovie) {
+                        tmdbApi.discoverMovies(
+                            apiKey = TMDB_API_KEY,
+                            language = language,
+                            page = page,
+                            sortBy = sortBy,
+                            withGenres = genreId,
+                            voteCountGte = voteCountGte,
+                            voteAverageGte = voteAverageGte,
+                            primaryReleaseDateGte = releaseDateGte,
+                            primaryReleaseDateLte = releaseDateLte
+                        )
+                    } else {
+                        tmdbApi.discoverTv(
+                            apiKey = TMDB_API_KEY,
+                            language = language,
+                            page = page,
+                            sortBy = sortBy,
+                            withGenres = genreId,
+                            voteCountGte = voteCountGte,
+                            voteAverageGte = voteAverageGte,
+                            firstAirDateGte = releaseDateGte,
+                            firstAirDateLte = releaseDateLte
+                        )
+                    }
+                    response.body()?.results.orEmpty().map { it.toBrowseMetaPreview(mediaType) }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten().distinctBy { it.id }
     }
 
     private suspend fun fetchDecadeDiscover(
@@ -430,33 +441,42 @@ class DiscoveryBrowseViewModel @Inject constructor(
         language: String?,
         sortBy: String,
         voteCountGte: Int = 100,
-        genreId: String? = null
-    ): List<MetaPreview> {
+        genreId: String? = null,
+        pages: Int = 1
+    ): List<MetaPreview> = coroutineScope {
         val mediaType = if (isMovie) "movie" else "series"
-        val response = if (isMovie) {
-            tmdbApi.discoverMovies(
-                apiKey = TMDB_API_KEY,
-                language = language,
-                page = 1,
-                sortBy = sortBy,
-                primaryReleaseDateGte = "$startYear-01-01",
-                primaryReleaseDateLte = "$endYear-12-31",
-                voteCountGte = voteCountGte,
-                withGenres = genreId
-            )
-        } else {
-            tmdbApi.discoverTv(
-                apiKey = TMDB_API_KEY,
-                language = language,
-                page = 1,
-                sortBy = sortBy,
-                firstAirDateGte = "$startYear-01-01",
-                firstAirDateLte = "$endYear-12-31",
-                voteCountGte = voteCountGte,
-                withGenres = genreId
-            )
-        }
-        return response.body()?.results.orEmpty().map { it.toBrowseMetaPreview(mediaType) }
+        (1..pages).map { page ->
+            async {
+                try {
+                    val response = if (isMovie) {
+                        tmdbApi.discoverMovies(
+                            apiKey = TMDB_API_KEY,
+                            language = language,
+                            page = page,
+                            sortBy = sortBy,
+                            primaryReleaseDateGte = "$startYear-01-01",
+                            primaryReleaseDateLte = "$endYear-12-31",
+                            voteCountGte = voteCountGte,
+                            withGenres = genreId
+                        )
+                    } else {
+                        tmdbApi.discoverTv(
+                            apiKey = TMDB_API_KEY,
+                            language = language,
+                            page = page,
+                            sortBy = sortBy,
+                            firstAirDateGte = "$startYear-01-01",
+                            firstAirDateLte = "$endYear-12-31",
+                            voteCountGte = voteCountGte,
+                            withGenres = genreId
+                        )
+                    }
+                    response.body()?.results.orEmpty().map { it.toBrowseMetaPreview(mediaType) }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten().distinctBy { it.id }
     }
 }
 
