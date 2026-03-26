@@ -194,10 +194,10 @@ fun NetflixStyleRow(
                 .fillMaxWidth()
                 .padding(horizontal = 48.dp)
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                .focusable()
                 .onFocusChanged { state ->
                     isFocused = state.isFocused || state.hasFocus
                 }
+                .focusable()
                 .onPreviewKeyEvent { event ->
                     val native = event.nativeKeyEvent
 
