@@ -1,13 +1,8 @@
 package com.nuvio.tv.ui.components
 
 import android.view.KeyEvent as AndroidKeyEvent
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -247,46 +242,28 @@ fun NetflixStyleRow(
                 trailerMuted = trailerMuted
             )
 
-            // Poster strip (right) — animated slide when index changes
+            // Poster strip (right) — crossfade when index changes
             val actualPosterCount = minOf(visiblePosterCount, items.size - 1)
             if (actualPosterCount > 0) {
                 val posterIndices = (1..actualPosterCount).map { i -> (selectedIndex + i) % items.size }
-                // Fixed-width container prevents gap jitter during slide animation
-                val posterStripWidth = posterWidth * actualPosterCount + 12.dp * (actualPosterCount - 1)
 
-                Box(
-                    modifier = Modifier
-                        .width(posterStripWidth)
-                        .height(posterHeight),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    AnimatedContent(
-                        targetState = posterIndices,
-                        transitionSpec = {
-                            val direction = if (slideRight) 1 else -1
-                            slideInHorizontally(
-                                animationSpec = tween(SLIDE_ANIM_MS),
-                                initialOffsetX = { fullWidth -> direction * fullWidth / 3 }
-                            ) togetherWith slideOutHorizontally(
-                                animationSpec = tween(SLIDE_ANIM_MS),
-                                targetOffsetX = { fullWidth -> -direction * fullWidth / 3 }
-                            ) using SizeTransform(clip = true)
-                        },
-                        label = "posterSlide"
-                    ) { indices ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            indices.forEach { posterIndex ->
-                                val posterItem = items[posterIndex]
-                                CarouselPosterCard(
-                                    item = posterItem,
-                                    width = posterWidth,
-                                    height = posterHeight,
-                                    shape = cardShape,
-                                    isWatched = isItemWatched(posterItem)
-                                )
-                            }
+                Crossfade(
+                    targetState = posterIndices,
+                    animationSpec = tween(SLIDE_ANIM_MS),
+                    label = "posterFade"
+                ) { indices ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        indices.forEach { posterIndex ->
+                            val posterItem = items[posterIndex]
+                            CarouselPosterCard(
+                                item = posterItem,
+                                width = posterWidth,
+                                height = posterHeight,
+                                shape = cardShape,
+                                isWatched = isItemWatched(posterItem)
+                            )
                         }
                     }
                 }
@@ -321,87 +298,94 @@ private fun ExpandedCarouselCard(
     val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
     val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
 
+    // Outer Box: no clip — holds the focus ring outside the clipped content
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
-            .clip(shape)
     ) {
-        // Crossfade for smooth backdrop transitions (no directional slide)
-        Crossfade(
-            targetState = selectedIndex,
-            animationSpec = tween(SLIDE_ANIM_MS),
-            label = "expandedCardFade"
-        ) { animatedIndex ->
-            val item = items[animatedIndex]
-            val backdropUrl = item.backdropUrl
-            val imageModel = remember(backdropUrl, requestWidthPx, requestHeightPx) {
-                ImageRequest.Builder(context)
-                    .data(backdropUrl)
-                    .crossfade(false)
-                    .memoryCacheKey("netflix_backdrop_${backdropUrl}_${requestWidthPx}x${requestHeightPx}")
-                    .size(width = requestWidthPx, height = requestHeightPx)
-                    .build()
-            }
-            val bgColor = NuvioColors.BackgroundCard
-            val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
+        // Inner Box: clipped content (backdrop, trailer, etc.)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+        ) {
+            // Crossfade for smooth backdrop transitions (no directional slide)
+            Crossfade(
+                targetState = selectedIndex,
+                animationSpec = tween(SLIDE_ANIM_MS),
+                label = "expandedCardFade"
+            ) { animatedIndex ->
+                val item = items[animatedIndex]
+                val backdropUrl = item.backdropUrl
+                val imageModel = remember(backdropUrl, requestWidthPx, requestHeightPx) {
+                    ImageRequest.Builder(context)
+                        .data(backdropUrl)
+                        .crossfade(false)
+                        .memoryCacheKey("netflix_backdrop_${backdropUrl}_${requestWidthPx}x${requestHeightPx}")
+                        .size(width = requestWidthPx, height = requestHeightPx)
+                        .build()
+                }
+                val bgColor = NuvioColors.BackgroundCard
+                val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (!backdropUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = imageModel,
-                        contentDescription = item.name,
-                        modifier = Modifier.fillMaxSize(),
-                        placeholder = backgroundPainter,
-                        error = backgroundPainter,
-                        fallback = backgroundPainter,
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!backdropUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = imageModel,
+                            contentDescription = item.name,
+                            modifier = Modifier.fillMaxSize(),
+                            placeholder = backgroundPainter,
+                            error = backgroundPainter,
+                            fallback = backgroundPainter,
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(bgColor)
+                        )
+                    }
+
+                    // Bottom gradient
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(bgColor)
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(96.dp)
+                            .drawWithCache {
+                                val gradient = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.76f)
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height
+                                )
+                                onDrawBehind { drawRect(gradient) }
+                            }
                     )
+
+                    // Logo or title overlay
+                    ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx)
                 }
+            }
 
-                // Bottom gradient
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .height(96.dp)
-                        .drawWithCache {
-                            val gradient = Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.76f)
-                                ),
-                                startY = 0f,
-                                endY = size.height
-                            )
-                            onDrawBehind { drawRect(gradient) }
-                        }
+            // Trailer overlay — outside Crossfade so it persists across transitions
+            if (trailerPreviewUrl != null && isFocused) {
+                TrailerPlayer(
+                    trailerUrl = trailerPreviewUrl,
+                    trailerAudioUrl = trailerPreviewAudioUrl,
+                    isPlaying = true,
+                    onEnded = {},
+                    modifier = Modifier.fillMaxSize(),
+                    muted = trailerMuted
                 )
-
-                // Logo or title overlay
-                ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx)
             }
         }
 
-        // Trailer overlay — outside Crossfade so it persists across transitions
-        if (trailerPreviewUrl != null && isFocused) {
-            TrailerPlayer(
-                trailerUrl = trailerPreviewUrl,
-                trailerAudioUrl = trailerPreviewAudioUrl,
-                isPlaying = true,
-                onEnded = {},
-                modifier = Modifier.fillMaxSize(),
-                muted = trailerMuted
-            )
-        }
-
-        // Focus ring overlay — drawn on top of all content
+        // Focus ring — outside the clipped Box, drawn on top of everything
         if (isFocused) {
             val focusColor = NuvioColors.FocusRing
             val cornerRadiusPx = with(density) { cornerRadius.toPx() }

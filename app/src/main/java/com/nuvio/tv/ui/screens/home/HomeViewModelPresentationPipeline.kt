@@ -225,7 +225,6 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
     apiType: String,
     fallbackYtId: String? = null
 ) {
-    if (startupGracePeriodActive) return
     if (activeTrailerPreviewItemId != itemId) {
         activeTrailerPreviewItemId = itemId
         trailerPreviewRequestVersion++
@@ -238,6 +237,17 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
     val requestVersion = trailerPreviewRequestVersion
 
     viewModelScope.launch {
+        // Wait for startup grace period to end before making network requests
+        val graceRemaining = remainingStartupGraceMs()
+        if (graceRemaining > 0) {
+            delay(graceRemaining)
+            // Re-check if this is still the latest request after waiting
+            if (activeTrailerPreviewItemId != itemId || trailerPreviewRequestVersion != requestVersion) {
+                trailerPreviewLoadingIds.remove(itemId)
+                return@launch
+            }
+        }
+
         val tmdbId = try {
             tmdbService.ensureTmdbId(itemId, apiType)
         } catch (_: Exception) {
