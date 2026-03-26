@@ -154,8 +154,12 @@ fun NetflixStyleRow(
         if (isFocused) onRowFocused()
     }
 
-    val selectedTrailerPreviewUrl = trailerPreviewUrls[items[selectedIndex].id]
-    val selectedTrailerPreviewAudioUrl = trailerPreviewAudioUrls[items[selectedIndex].id]
+    val selectedItemId = items[selectedIndex].id
+    val selectedTrailerPreviewUrl = trailerPreviewUrls[selectedItemId]
+    val selectedTrailerPreviewAudioUrl = trailerPreviewAudioUrls[selectedItemId]
+
+    // DEBUG: temporary overlay to diagnose trailer issue — REMOVE after fixing
+    val debugTrailerState = "focused=$isFocused trailer=$trailerEnabled url=${if (selectedTrailerPreviewUrl != null) "YES" else "null"} mapSize=${trailerPreviewUrls.size} id=${selectedItemId.take(12)}"
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Title row
@@ -258,17 +262,32 @@ fun NetflixStyleRow(
             verticalAlignment = Alignment.Top
         ) {
             // Expanded card (left) — always expanded, shows backdrop for selected item
-            ExpandedCarouselCard(
-                items = items,
-                selectedIndex = selectedIndex,
-                width = expandedCardWidth,
-                height = expandedCardHeight,
-                shape = cardShape,
-                isFocused = isFocused,
-                trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
-                trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
-                trailerMuted = trailerMuted
-            )
+            Box {
+                ExpandedCarouselCard(
+                    items = items,
+                    selectedIndex = selectedIndex,
+                    width = expandedCardWidth,
+                    height = expandedCardHeight,
+                    shape = cardShape,
+                    isFocused = isFocused,
+                    trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
+                    trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
+                    trailerMuted = trailerMuted
+                )
+                // DEBUG overlay — REMOVE after fixing
+                if (isFocused) {
+                    Text(
+                        text = debugTrailerState,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Yellow,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .background(Color.Black.copy(alpha = 0.7f))
+                            .padding(2.dp)
+                    )
+                }
+            }
 
             // Poster strip (right) — fade+slide when index changes
             val actualPosterCount = if (showSelectedPosterInStrip) {
