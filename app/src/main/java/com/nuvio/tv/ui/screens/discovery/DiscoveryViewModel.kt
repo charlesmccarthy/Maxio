@@ -68,6 +68,11 @@ class DiscoveryViewModel @Inject constructor(
     val trailerPreviewAudioUrls = mutableStateMapOf<String, String>()
     private val trailerNegativeCache = mutableSetOf<String>()
     private val trailerLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    // Logo URL support (TMDB items don't include logos in discover responses)
+    val logoUrls = mutableStateMapOf<String, String>()
+    private val logoNegativeCache = mutableSetOf<String>()
+    private val logoLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     var trailerEnabled: Boolean = false
         private set
     var trailerMuted: Boolean = true
@@ -114,6 +119,42 @@ class DiscoveryViewModel @Inject constructor(
                 trailerNegativeCache.add(itemId)
             } finally {
                 trailerLoadingIds.remove(itemId)
+            }
+        }
+    }
+
+    fun requestLogo(item: MetaPreview) {
+        val itemId = item.id
+        if (logoUrls.containsKey(itemId)) return
+        if (logoNegativeCache.contains(itemId)) return
+        if (!logoLoadingIds.add(itemId)) return
+
+        val tmdbId = itemId.removePrefix("tmdb:").toIntOrNull()
+        if (tmdbId == null) {
+            logoLoadingIds.remove(itemId)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val isMovie = _uiState.value.contentType == "movie"
+                val response = if (isMovie) {
+                    tmdbApi.getMovieImages(movieId = tmdbId, apiKey = TMDB_API_KEY)
+                } else {
+                    tmdbApi.getTvImages(tvId = tmdbId, apiKey = TMDB_API_KEY)
+                }
+                val logoPath = response.body()?.logos
+                    ?.firstOrNull { it.iso6391 == "en" || it.iso6391 == null }
+                    ?.filePath
+                if (logoPath != null) {
+                    logoUrls[itemId] = "https://image.tmdb.org/t/p/w500$logoPath"
+                } else {
+                    logoNegativeCache.add(itemId)
+                }
+            } catch (_: Exception) {
+                logoNegativeCache.add(itemId)
+            } finally {
+                logoLoadingIds.remove(itemId)
             }
         }
     }

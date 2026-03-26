@@ -87,6 +87,7 @@ fun NetflixStyleRow(
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
     trailerPreviewUrls: Map<String, String> = emptyMap(),
     trailerPreviewAudioUrls: Map<String, String> = emptyMap(),
+    logoOverrides: Map<String, String> = emptyMap(),
     showSelectedPosterInStrip: Boolean = false,
     highlightSelectedPoster: Boolean = false,
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
@@ -271,7 +272,8 @@ fun NetflixStyleRow(
                 isFocused = isFocused,
                 trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
                 trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
-                trailerMuted = trailerMuted
+                trailerMuted = trailerMuted,
+                logoOverrides = logoOverrides
             )
 
             // Poster strip (right) — fade+slide when index changes
@@ -349,7 +351,8 @@ private fun ExpandedCarouselCard(
     isFocused: Boolean,
     trailerPreviewUrl: String?,
     trailerPreviewAudioUrl: String?,
-    trailerMuted: Boolean
+    trailerMuted: Boolean,
+    logoOverrides: Map<String, String> = emptyMap()
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -430,7 +433,7 @@ private fun ExpandedCarouselCard(
                     )
 
                     // Logo or title overlay
-                    ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx)
+                    ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx, logoOverrides = logoOverrides)
                 }
             }
 
@@ -474,7 +477,8 @@ private fun ExpandedCarouselCard(
                 ExpandedCardTitle(
                     item = items[animatedIndex],
                     context = context,
-                    requestWidthPx = requestWidthPx
+                    requestWidthPx = requestWidthPx,
+                    logoOverrides = logoOverrides
                 )
             }
         }
@@ -486,12 +490,14 @@ private fun ExpandedCarouselCard(
 private fun ExpandedCardTitle(
     item: MetaPreview,
     context: android.content.Context,
-    requestWidthPx: Int
+    requestWidthPx: Int,
+    logoOverrides: Map<String, String> = emptyMap()
 ) {
     val density = LocalDensity.current
     val logoRequestHeightPx = remember(density) { with(density) { 48.dp.roundToPx() } }
-    var logoLoadFailed by remember(item.logo) { mutableStateOf(false) }
-    val showLogo = !item.logo.isNullOrBlank() && !logoLoadFailed
+    val effectiveLogoUrl = logoOverrides[item.id] ?: item.logo
+    var logoLoadFailed by remember(effectiveLogoUrl) { mutableStateOf(false) }
+    val showLogo = !effectiveLogoUrl.isNullOrBlank() && !logoLoadFailed
 
     Column(
         modifier = Modifier
@@ -500,9 +506,9 @@ private fun ExpandedCardTitle(
         verticalArrangement = Arrangement.Bottom
     ) {
         if (showLogo) {
-            val logoModel = remember(item.logo, requestWidthPx, logoRequestHeightPx) {
+            val logoModel = remember(effectiveLogoUrl, requestWidthPx, logoRequestHeightPx) {
                 ImageRequest.Builder(context)
-                    .data(item.logo)
+                    .data(effectiveLogoUrl)
                     .crossfade(false)
                     .size(width = requestWidthPx, height = logoRequestHeightPx)
                     .build()

@@ -3,8 +3,10 @@ package com.nuvio.tv.ui.screens.library
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.repository.TraktLibraryService
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.MetaPreview
@@ -123,7 +125,8 @@ class LibraryViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val trailerService: TrailerService,
-    private val tmdbService: TmdbService
+    private val tmdbService: TmdbService,
+    private val tmdbApi: TmdbApi
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -140,6 +143,11 @@ class LibraryViewModel @Inject constructor(
         private set
     var trailerMuted: Boolean = true
         private set
+
+    // Logo URL support
+    val logoUrls = mutableStateMapOf<String, String>()
+    private val logoNegativeCache = mutableSetOf<String>()
+    private val logoLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     init {
         observeLayoutPreferences()
@@ -183,6 +191,44 @@ class LibraryViewModel @Inject constructor(
                 trailerNegativeCache.add(itemId)
             } finally {
                 trailerLoadingIds.remove(itemId)
+            }
+        }
+    }
+
+    fun requestLogo(item: MetaPreview) {
+        val itemId = item.id
+        // Only fetch if item already has no logo
+        if (!item.logo.isNullOrBlank()) return
+        if (logoUrls.containsKey(itemId)) return
+        if (logoNegativeCache.contains(itemId)) return
+        if (!logoLoadingIds.add(itemId)) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tmdbIdStr = runCatching { tmdbService.ensureTmdbId(itemId, item.apiType) }.getOrNull()
+                val tmdbId = tmdbIdStr?.toIntOrNull()
+                if (tmdbId == null) {
+                    logoNegativeCache.add(itemId)
+                    return@launch
+                }
+                val isMovie = item.apiType.equals("movie", ignoreCase = true)
+                val response = if (isMovie) {
+                    tmdbApi.getMovieImages(movieId = tmdbId, apiKey = BuildConfig.TMDB_API_KEY)
+                } else {
+                    tmdbApi.getTvImages(tvId = tmdbId, apiKey = BuildConfig.TMDB_API_KEY)
+                }
+                val logoPath = response.body()?.logos
+                    ?.firstOrNull { it.iso6391 == "en" || it.iso6391 == null }
+                    ?.filePath
+                if (logoPath != null) {
+                    logoUrls[itemId] = "https://image.tmdb.org/t/p/w500$logoPath"
+                } else {
+                    logoNegativeCache.add(itemId)
+                }
+            } catch (_: Exception) {
+                logoNegativeCache.add(itemId)
+            } finally {
+                logoLoadingIds.remove(itemId)
             }
         }
     }

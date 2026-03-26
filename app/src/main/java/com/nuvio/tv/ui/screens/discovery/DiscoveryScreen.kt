@@ -131,9 +131,11 @@ fun DiscoveryScreen(
                         },
                         trailerPreviewUrls = viewModel.trailerPreviewUrls,
                         trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                        logoOverrides = viewModel.logoUrls,
                         trailerEnabled = viewModel.trailerEnabled,
                         trailerMuted = viewModel.trailerMuted,
-                        onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) }
+                        onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
+                        onItemFocus = { item -> viewModel.requestLogo(item) }
                     )
                 }
 

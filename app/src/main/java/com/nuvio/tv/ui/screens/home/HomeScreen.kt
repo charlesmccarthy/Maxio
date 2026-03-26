@@ -146,20 +146,10 @@ fun HomeScreen(
             uiState.continueWatchingItems.isNotEmpty() ||
             uiState.heroItems.isNotEmpty()
 
+        // Content loads underneath — intro video overlays on top
         when {
             uiState.isLoading && !hasAnyContent -> {
-                if (!introVideoFinished) {
-                    IntroVideoPlayer(
-                        onFinished = { introVideoFinished = true }
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LoadingIndicator()
-                    }
-                }
+                // Nothing visible yet — black background shown by intro video overlay
             }
 
             uiState.error == "No addons installed" && uiState.catalogRows.isEmpty() -> {
@@ -208,20 +198,15 @@ fun HomeScreen(
                         showHomeContentWithAnimation = true
                     }
                 }
-                if (shouldShowLoadingGate) {
-                    if (!introVideoFinished) {
-                        IntroVideoPlayer(
-                            onFinished = { introVideoFinished = true }
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            LoadingIndicator()
-                        }
+                if (shouldShowLoadingGate && introVideoFinished) {
+                    // Video done but content not ready yet — show spinner
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingIndicator()
                     }
-                } else {
+                } else if (!shouldShowLoadingGate) {
                     AnimatedVisibility(
                         visible = showHomeContentWithAnimation,
                         enter = fadeIn(animationSpec = tween(320)) +
@@ -274,6 +259,13 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        // Intro video overlay — plays on top of everything, only on first startup
+        if (!introVideoFinished) {
+            IntroVideoPlayer(
+                onFinished = { introVideoFinished = true }
+            )
         }
 
         val startupAuthNotice = uiState.startupAuthNotice
