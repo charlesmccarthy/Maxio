@@ -69,7 +69,7 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlinx.coroutines.delay
 
 private const val KEY_REPEAT_THROTTLE_MS = 80L
-private const val TRAILER_REQUEST_DEBOUNCE_MS = 800L
+private const val TRAILER_REQUEST_DEBOUNCE_MS = 100L
 private const val SLIDE_ANIM_MS = 300
 private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
 
@@ -326,7 +326,7 @@ private fun ExpandedCarouselCard(
     val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
     val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
 
-    // Single Box: drawWithContent draws children first, then focus ring on top
+    // Outer Box: NOT clipped — draws focus ring on top of everything
     val focusColor = NuvioColors.FocusRing
     val cornerRadiusPx = with(density) { cornerRadius.toPx() }
 
@@ -334,10 +334,9 @@ private fun ExpandedCarouselCard(
         modifier = Modifier
             .width(width)
             .height(height)
-            .clip(shape)
             .drawWithContent {
                 drawContent()
-                // Draw focus ring ON TOP of all content (backdrop, trailer, etc.)
+                // Draw focus ring ON TOP of all content (outside clip so it's not clipped)
                 if (isFocused) {
                     val strokeWidth = 3.dp.toPx()
                     val halfStroke = strokeWidth / 2
@@ -357,78 +356,85 @@ private fun ExpandedCarouselCard(
                 }
             }
     ) {
-        // Crossfade for smooth backdrop transitions (no directional slide)
-        Crossfade(
-            targetState = selectedIndex,
-            animationSpec = tween(SLIDE_ANIM_MS),
-            label = "expandedCardFade"
-        ) { animatedIndex ->
-            val item = items[animatedIndex]
-            val backdropUrl = item.backdropUrl
-            val imageModel = remember(backdropUrl, requestWidthPx, requestHeightPx) {
-                ImageRequest.Builder(context)
-                    .data(backdropUrl)
-                    .crossfade(false)
-                    .memoryCacheKey("netflix_backdrop_${backdropUrl}_${requestWidthPx}x${requestHeightPx}")
-                    .size(width = requestWidthPx, height = requestHeightPx)
-                    .build()
-            }
-            val bgColor = NuvioColors.BackgroundCard
-            val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
+        // Inner Box: clipped — contains all visual content (backdrop, trailer, etc.)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+        ) {
+            // Crossfade for smooth backdrop transitions (no directional slide)
+            Crossfade(
+                targetState = selectedIndex,
+                animationSpec = tween(SLIDE_ANIM_MS),
+                label = "expandedCardFade"
+            ) { animatedIndex ->
+                val item = items[animatedIndex]
+                val backdropUrl = item.backdropUrl
+                val imageModel = remember(backdropUrl, requestWidthPx, requestHeightPx) {
+                    ImageRequest.Builder(context)
+                        .data(backdropUrl)
+                        .crossfade(false)
+                        .memoryCacheKey("netflix_backdrop_${backdropUrl}_${requestWidthPx}x${requestHeightPx}")
+                        .size(width = requestWidthPx, height = requestHeightPx)
+                        .build()
+                }
+                val bgColor = NuvioColors.BackgroundCard
+                val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (!backdropUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = imageModel,
-                        contentDescription = item.name,
-                        modifier = Modifier.fillMaxSize(),
-                        placeholder = backgroundPainter,
-                        error = backgroundPainter,
-                        fallback = backgroundPainter,
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!backdropUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = imageModel,
+                            contentDescription = item.name,
+                            modifier = Modifier.fillMaxSize(),
+                            placeholder = backgroundPainter,
+                            error = backgroundPainter,
+                            fallback = backgroundPainter,
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(bgColor)
+                        )
+                    }
+
+                    // Bottom gradient
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(bgColor)
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(96.dp)
+                            .drawWithCache {
+                                val gradient = Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.76f)
+                                    ),
+                                    startY = 0f,
+                                    endY = size.height
+                                )
+                                onDrawBehind { drawRect(gradient) }
+                            }
                     )
+
+                    // Logo or title overlay
+                    ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx)
                 }
-
-                // Bottom gradient
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .height(96.dp)
-                        .drawWithCache {
-                            val gradient = Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.76f)
-                                ),
-                                startY = 0f,
-                                endY = size.height
-                            )
-                            onDrawBehind { drawRect(gradient) }
-                        }
-                )
-
-                // Logo or title overlay
-                ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx)
             }
-        }
 
-        // Trailer overlay — outside Crossfade so it persists across transitions
-        if (trailerPreviewUrl != null && isFocused) {
-            TrailerPlayer(
-                trailerUrl = trailerPreviewUrl,
-                trailerAudioUrl = trailerPreviewAudioUrl,
-                isPlaying = true,
-                onEnded = {},
-                modifier = Modifier.fillMaxSize(),
-                muted = trailerMuted
-            )
+            // Trailer overlay — outside Crossfade so it persists across transitions
+            if (trailerPreviewUrl != null && isFocused) {
+                TrailerPlayer(
+                    trailerUrl = trailerPreviewUrl,
+                    trailerAudioUrl = trailerPreviewAudioUrl,
+                    isPlaying = true,
+                    onEnded = {},
+                    modifier = Modifier.fillMaxSize(),
+                    muted = trailerMuted
+                )
+            }
         }
     }
 }
