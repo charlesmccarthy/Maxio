@@ -496,6 +496,7 @@ fun MetaDetailsScreen(
                     hideLogoDuringTrailer = uiState.hideLogoDuringTrailer,
                     trailerButtonEnabled = uiState.trailerButtonEnabled,
                     trailerInitialSeekMs = uiState.trailerInitialSeekMs,
+                    trailerBackgroundMode = uiState.trailerBackgroundMode,
                     trailerSeekToken = trailerSeekToken,
                     trailerSeekDeltaMs = trailerSeekDeltaMs,
                     onTrailerControlKey = { keyCode, action, repeatCount ->
@@ -666,6 +667,7 @@ private fun MetaDetailsContent(
     hideLogoDuringTrailer: Boolean,
     trailerButtonEnabled: Boolean,
     trailerInitialSeekMs: Long = 0L,
+    trailerBackgroundMode: Boolean = false,
     trailerSeekToken: Int,
     trailerSeekDeltaMs: Long,
     onTrailerControlKey: (keyCode: Int, action: Int, repeatCount: Int) -> Boolean,
@@ -1205,6 +1207,7 @@ private fun MetaDetailsContent(
             leftGradient = leftGradientBitmap,
             bottomGradient = bottomGradientBitmap,
             trailerInitialSeekMs = trailerInitialSeekMs,
+            trailerBackgroundMode = trailerBackgroundMode,
         )
 
         // Single scrollable column with hero + content
@@ -1242,6 +1245,7 @@ private fun MetaDetailsContent(
                         onTrailerClick = onTrailerButtonClick,
                         hideLogoDuringTrailer = hideLogoDuringTrailer,
                         isTrailerPlaying = isTrailerPlaying,
+                        trailerBackgroundMode = trailerBackgroundMode,
                         playButtonFocusRequester = heroPlayFocusRequester,
                         onHeroActionFocused = {
                             if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
@@ -1626,14 +1630,17 @@ private fun BackdropLayer(
     leftGradient: ImageBitmap,
     bottomGradient: ImageBitmap,
     trailerInitialSeekMs: Long = 0L,
+    trailerBackgroundMode: Boolean = false,
 ) {
+    // In background mode, treat visuals as if trailer is not playing — keep backdrop + gradients
+    val effectiveTrailerPlaying = isTrailerPlaying && !trailerBackgroundMode
     val backdropAlphaState = animateFloatAsState(
-        targetValue = if (isTrailerPlaying) 0f else if (isScrolledPastHero) 0.15f else 1f,
+        targetValue = if (effectiveTrailerPlaying) 0f else if (isScrolledPastHero) 0.15f else 1f,
         animationSpec = tween(durationMillis = if (isScrolledPastHero) 300 else 800),
         label = "backdropFade"
     )
     val gradientAlphaState = animateFloatAsState(
-        targetValue = if (isTrailerPlaying || isScrolledPastHero) 0f else 1f,
+        targetValue = if (effectiveTrailerPlaying || isScrolledPastHero) 0f else 1f,
         animationSpec = tween(durationMillis = if (isScrolledPastHero) 300 else 800),
         label = "gradientFade"
     )
