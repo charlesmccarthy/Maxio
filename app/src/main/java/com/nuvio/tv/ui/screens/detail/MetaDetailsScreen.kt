@@ -1632,13 +1632,14 @@ private fun BackdropLayer(
     trailerInitialSeekMs: Long = 0L,
     trailerBackgroundMode: Boolean = false,
 ) {
-    // In background mode, treat visuals as if trailer is not playing — keep backdrop + gradients
-    val effectiveTrailerPlaying = isTrailerPlaying && !trailerBackgroundMode
+    // Background mode: trailer replaces the backdrop image, but gradients stay for readability
     val backdropAlphaState = animateFloatAsState(
-        targetValue = if (effectiveTrailerPlaying) 0f else if (isScrolledPastHero) 0.15f else 1f,
+        targetValue = if (isTrailerPlaying) 0f else if (isScrolledPastHero) 0.15f else 1f,
         animationSpec = tween(durationMillis = if (isScrolledPastHero) 300 else 800),
         label = "backdropFade"
     )
+    // In background mode, keep gradients visible so content is readable on top of trailer
+    val effectiveTrailerPlaying = isTrailerPlaying && !trailerBackgroundMode
     val gradientAlphaState = animateFloatAsState(
         targetValue = if (effectiveTrailerPlaying || isScrolledPastHero) 0f else 1f,
         animationSpec = tween(durationMillis = if (isScrolledPastHero) 300 else 800),
