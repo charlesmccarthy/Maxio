@@ -282,6 +282,7 @@ class MetaDetailsViewModel @Inject constructor(
             MetaDetailsEvent.OnPlayButtonFocused -> handlePlayButtonFocused()
             MetaDetailsEvent.OnTrailerButtonClick -> handleTrailerButtonClick()
             MetaDetailsEvent.OnTrailerEnded -> handleTrailerEnded()
+            MetaDetailsEvent.OnBackgroundTrailerEnded -> handleBackgroundTrailerEnded()
             MetaDetailsEvent.OnToggleMovieWatched -> toggleMovieWatched()
             is MetaDetailsEvent.OnToggleEpisodeWatched -> toggleEpisodeWatched(event.video)
             is MetaDetailsEvent.OnMarkSeasonWatched -> markSeasonWatched(event.season)
@@ -1824,6 +1825,14 @@ class MetaDetailsViewModel @Inject constructor(
             showControls = false,
             hideLogo = false
         )
+    }
+
+    private fun handleBackgroundTrailerEnded() {
+        _uiState.update { it.copy(
+            backgroundTrailerUrl = null,
+            backgroundTrailerAudioUrl = null,
+            backgroundTrailerSeekMs = 0L
+        ) }
     }
 
     override fun onCleared() {

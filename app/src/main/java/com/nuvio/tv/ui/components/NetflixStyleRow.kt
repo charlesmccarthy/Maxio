@@ -461,12 +461,15 @@ private fun ExpandedCarouselCard(
             }
 
             // Trailer overlay — outside Crossfade so it persists across transitions
-            if (trailerPreviewUrl != null && isFocused) {
+            // Hide when ended so the backdrop image shows instead of the last frame
+            var trailerEnded by remember { mutableStateOf(false) }
+            LaunchedEffect(trailerPreviewUrl) { trailerEnded = false }
+            if (trailerPreviewUrl != null && isFocused && !trailerEnded) {
                 TrailerPlayer(
                     trailerUrl = trailerPreviewUrl,
                     trailerAudioUrl = trailerPreviewAudioUrl,
                     isPlaying = true,
-                    onEnded = {},
+                    onEnded = { trailerEnded = true },
                     modifier = Modifier.fillMaxSize(),
                     muted = trailerMuted,
                     cropToFill = true,
