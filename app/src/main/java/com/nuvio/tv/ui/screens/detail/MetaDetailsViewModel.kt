@@ -134,20 +134,16 @@ class MetaDetailsViewModel @Inject constructor(
 
     private fun checkActiveTrailerHandoff() {
         val handoff = activeTrailerState.consume(forItemId = itemId) ?: return
-        trailerHandoffPositionMs = handoff.positionMs
+        // Use background trailer — completely separate from the normal trailer system.
+        // This just replaces the static backdrop image with the trailer video.
+        // isTrailerPlaying stays false so ALL detail page content renders normally.
         _uiState.update { state ->
             state.copy(
-                trailerUrl = handoff.videoUrl,
-                trailerAudioUrl = handoff.audioUrl,
-                isTrailerPlaying = true,
-                isTrailerLoading = false,
-                showTrailerControls = false,
-                hideLogoDuringTrailer = false,
-                trailerInitialSeekMs = handoff.positionMs,
-                trailerBackgroundMode = true
+                backgroundTrailerUrl = handoff.videoUrl,
+                backgroundTrailerAudioUrl = handoff.audioUrl,
+                backgroundTrailerSeekMs = handoff.positionMs
             )
         }
-        trailerHasPlayed = true
     }
 
     private fun observeHideUnreleasedContent() {
@@ -1695,8 +1691,6 @@ class MetaDetailsViewModel @Inject constructor(
 
     private fun fetchTrailerUrl() {
         val meta = _uiState.value.meta ?: return
-        // Skip fetch if we already have a trailer from handoff
-        if (_uiState.value.trailerUrl != null && trailerHasPlayed) return
 
         trailerFetchJob?.cancel()
         trailerFetchJob = viewModelScope.launch {

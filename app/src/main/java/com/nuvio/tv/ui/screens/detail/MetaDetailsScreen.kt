@@ -234,7 +234,7 @@ fun MetaDetailsScreen(
     BackHandler {
         if (selectedComment != null) {
             viewModel.onEvent(MetaDetailsEvent.OnDismissCommentOverlay)
-        } else if (uiState.isTrailerPlaying && !uiState.trailerBackgroundMode) {
+        } else if (uiState.isTrailerPlaying) {
             restorePlayFocusAfterTrailerBackToken += 1
             viewModel.onEvent(MetaDetailsEvent.OnTrailerEnded)
         } else {
@@ -327,13 +327,10 @@ fun MetaDetailsScreen(
                             else -> false
                         }
                     }
-                    // During auto trailer preview (non-background), consume all keys except back/ESC so content doesn't scroll.
-                    // In background mode (handoff), let all keys through so user can browse details.
-                    if (!uiState.trailerBackgroundMode) {
-                        val keyCode = keyEvent.nativeKeyEvent.keyCode
-                        return@onPreviewKeyEvent keyCode != KeyEvent.KEYCODE_BACK &&
-                                keyCode != KeyEvent.KEYCODE_ESCAPE
-                    }
+                    // During auto trailer preview, consume all keys except back/ESC so content doesn't scroll.
+                    val keyCode = keyEvent.nativeKeyEvent.keyCode
+                    return@onPreviewKeyEvent keyCode != KeyEvent.KEYCODE_BACK &&
+                            keyCode != KeyEvent.KEYCODE_ESCAPE
                 }
                 if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                     val nativeEvent = keyEvent.nativeKeyEvent
@@ -496,7 +493,9 @@ fun MetaDetailsScreen(
                     hideLogoDuringTrailer = uiState.hideLogoDuringTrailer,
                     trailerButtonEnabled = uiState.trailerButtonEnabled,
                     trailerInitialSeekMs = uiState.trailerInitialSeekMs,
-                    trailerBackgroundMode = uiState.trailerBackgroundMode,
+                    backgroundTrailerUrl = uiState.backgroundTrailerUrl,
+                    backgroundTrailerAudioUrl = uiState.backgroundTrailerAudioUrl,
+                    backgroundTrailerSeekMs = uiState.backgroundTrailerSeekMs,
                     trailerSeekToken = trailerSeekToken,
                     trailerSeekDeltaMs = trailerSeekDeltaMs,
                     onTrailerControlKey = { keyCode, action, repeatCount ->
@@ -667,7 +666,9 @@ private fun MetaDetailsContent(
     hideLogoDuringTrailer: Boolean,
     trailerButtonEnabled: Boolean,
     trailerInitialSeekMs: Long = 0L,
-    trailerBackgroundMode: Boolean = false,
+    backgroundTrailerUrl: String? = null,
+    backgroundTrailerAudioUrl: String? = null,
+    backgroundTrailerSeekMs: Long = 0L,
     trailerSeekToken: Int,
     trailerSeekDeltaMs: Long,
     onTrailerControlKey: (keyCode: Int, action: Int, repeatCount: Int) -> Boolean,
@@ -1207,7 +1208,9 @@ private fun MetaDetailsContent(
             leftGradient = leftGradientBitmap,
             bottomGradient = bottomGradientBitmap,
             trailerInitialSeekMs = trailerInitialSeekMs,
-            trailerBackgroundMode = trailerBackgroundMode,
+            backgroundTrailerUrl = backgroundTrailerUrl,
+            backgroundTrailerAudioUrl = backgroundTrailerAudioUrl,
+            backgroundTrailerSeekMs = backgroundTrailerSeekMs,
         )
 
         // Single scrollable column with hero + content
@@ -1245,7 +1248,6 @@ private fun MetaDetailsContent(
                         onTrailerClick = onTrailerButtonClick,
                         hideLogoDuringTrailer = hideLogoDuringTrailer,
                         isTrailerPlaying = isTrailerPlaying,
-                        trailerBackgroundMode = trailerBackgroundMode,
                         playButtonFocusRequester = heroPlayFocusRequester,
                         onHeroActionFocused = {
                             if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
@@ -1630,18 +1632,18 @@ private fun BackdropLayer(
     leftGradient: ImageBitmap,
     bottomGradient: ImageBitmap,
     trailerInitialSeekMs: Long = 0L,
-    trailerBackgroundMode: Boolean = false,
+    backgroundTrailerUrl: String? = null,
+    backgroundTrailerAudioUrl: String? = null,
+    backgroundTrailerSeekMs: Long = 0L,
 ) {
-    // Background mode: trailer replaces the backdrop image, but gradients stay for readability
+    val hasBackgroundTrailer = !backgroundTrailerUrl.isNullOrBlank()
     val backdropAlphaState = animateFloatAsState(
-        targetValue = if (isTrailerPlaying) 0f else if (isScrolledPastHero) 0.15f else 1f,
+        targetValue = if (isTrailerPlaying || hasBackgroundTrailer) 0f else if (isScrolledPastHero) 0.15f else 1f,
         animationSpec = tween(durationMillis = if (isScrolledPastHero) 300 else 800),
         label = "backdropFade"
     )
-    // In background mode, keep gradients visible so content is readable on top of trailer
-    val effectiveTrailerPlaying = isTrailerPlaying && !trailerBackgroundMode
     val gradientAlphaState = animateFloatAsState(
-        targetValue = if (effectiveTrailerPlaying || isScrolledPastHero) 0f else 1f,
+        targetValue = if (isTrailerPlaying || isScrolledPastHero) 0f else 1f,
         animationSpec = tween(durationMillis = if (isScrolledPastHero) 300 else 800),
         label = "gradientFade"
     )
@@ -1653,6 +1655,19 @@ private fun BackdropLayer(
             alpha = backdropAlphaState.value,
             contentScale = ContentScale.Crop
         )
+        // Background trailer — replaces backdrop image, completely separate from normal trailer
+        if (hasBackgroundTrailer) {
+            TrailerPlayer(
+                trailerUrl = backgroundTrailerUrl,
+                trailerAudioUrl = backgroundTrailerAudioUrl,
+                isPlaying = true,
+                onEnded = {},
+                muted = true,
+                initialSeekMs = backgroundTrailerSeekMs,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        // Normal interactive trailer (user-triggered or auto-play)
         TrailerPlayer(
             trailerUrl = trailerUrl,
             trailerAudioUrl = trailerAudioUrl,
