@@ -138,7 +138,17 @@ fun NetflixStyleRow(
         if (isFocused && trailerEnabled) {
             delay(TRAILER_REQUEST_DEBOUNCE_MS)
             if (isFocused) {
+                // Current item first — gets network priority
                 onRequestTrailerPreview(items[selectedIndex])
+                // Prefetch 2 left + 5 right after a delay so current item resolves first
+                delay(1500)
+                if (isFocused) {
+                    val size = items.size
+                    for (offset in listOf(1, -1, 2, -2, 3, 4, 5)) {
+                        val idx = (selectedIndex + offset + size) % size
+                        onRequestTrailerPreview(items[idx])
+                    }
+                }
             }
         }
     }
@@ -147,7 +157,17 @@ fun NetflixStyleRow(
         if (!isFocused) return@LaunchedEffect
         delay(ITEM_FOCUS_DEBOUNCE_MS)
         if (isFocused) {
+            // Current item first
             latestOnItemFocus(items[selectedIndex])
+            // Prefetch logos for 2 left + 5 right after delay
+            delay(1000)
+            if (isFocused) {
+                val size = items.size
+                for (offset in listOf(1, -1, 2, -2, 3, 4, 5)) {
+                    val idx = (selectedIndex + offset + size) % size
+                    latestOnItemFocus(items[idx])
+                }
+            }
         }
     }
 

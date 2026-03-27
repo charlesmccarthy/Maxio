@@ -1734,7 +1734,10 @@ class MetaDetailsViewModel @Inject constructor(
                     state.copy(
                         trailerUrl = url,
                         trailerAudioUrl = audioUrl,
-                        isTrailerLoading = false
+                        isTrailerLoading = false,
+                        // Always play trailer as background behind detail content
+                        backgroundTrailerUrl = if (state.backgroundTrailerUrl == null) url else state.backgroundTrailerUrl,
+                        backgroundTrailerAudioUrl = if (state.backgroundTrailerUrl == null) audioUrl else state.backgroundTrailerAudioUrl
                     )
                 }
             }

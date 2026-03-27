@@ -1662,7 +1662,7 @@ private fun BackdropLayer(
                 trailerAudioUrl = backgroundTrailerAudioUrl,
                 isPlaying = true,
                 onEnded = {},
-                muted = true,
+                muted = false,
                 initialSeekMs = backgroundTrailerSeekMs,
                 modifier = Modifier.fillMaxSize()
             )
