@@ -27,6 +27,7 @@ data class MetaDetailsUiState(
     val showTrailerControls: Boolean = false,
     val hideLogoDuringTrailer: Boolean = false,
     val trailerButtonEnabled: Boolean = false,
+    val trailerInitialSeekMs: Long = 0L,
     val librarySourceMode: LibrarySourceMode = LibrarySourceMode.LOCAL,
     val libraryListTabs: List<LibraryListTab> = emptyList(),
     val isInWatchlist: Boolean = false,

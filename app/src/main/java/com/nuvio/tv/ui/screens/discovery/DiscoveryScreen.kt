@@ -127,6 +127,7 @@ fun DiscoveryScreen(
                         title = row.title,
                         items = row.items,
                         onItemClick = { item ->
+                            viewModel.storeActiveTrailer(item)
                             viewModel.onEvent(DiscoveryEvent.OnItemClick(item, onNavigateToDetail))
                         },
                         trailerPreviewUrls = viewModel.trailerPreviewUrls,
@@ -135,7 +136,10 @@ fun DiscoveryScreen(
                         trailerEnabled = viewModel.trailerEnabled,
                         trailerMuted = viewModel.trailerMuted,
                         onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
-                        onItemFocus = { item -> viewModel.requestLogo(item) }
+                        onItemFocus = { item -> viewModel.requestLogo(item) },
+                        onTrailerProgressChanged = { itemId, positionMs ->
+                            viewModel.onTrailerProgressChanged(itemId, positionMs)
+                        }
                     )
                 }
 

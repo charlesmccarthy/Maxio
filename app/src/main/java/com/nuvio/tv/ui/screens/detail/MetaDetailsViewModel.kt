@@ -34,6 +34,7 @@ import com.nuvio.tv.domain.repository.StreamRepository
 import com.nuvio.tv.domain.repository.WatchProgressRepository
 import com.nuvio.tv.data.local.WatchedItemsPreferences
 import com.nuvio.tv.data.local.TrailerSettingsDataStore
+import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.core.util.isUnreleased
 import java.time.LocalDate
@@ -83,6 +84,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val playerSettingsDataStore: PlayerSettingsDataStore,
     private val streamRepository: StreamRepository,
     private val streamPrefetchCache: StreamPrefetchCache,
+    private val activeTrailerState: ActiveTrailerState,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val itemId: String = savedStateHandle["itemId"] ?: ""
@@ -113,7 +115,10 @@ class MetaDetailsViewModel @Inject constructor(
     private var traktCommentsEnabled = false
     private var traktAuthenticated = false
 
+    private var trailerHandoffPositionMs: Long = 0L
+
     init {
+        checkActiveTrailerHandoff()
         observeMetaViewSettings()
         observeTrailerAutoplaySettings()
         observeTraktCommentsAvailability()
@@ -125,6 +130,23 @@ class MetaDetailsViewModel @Inject constructor(
         observeShowFullReleaseDate()
         observeHideUnreleasedContent()
         loadMeta()
+    }
+
+    private fun checkActiveTrailerHandoff() {
+        val handoff = activeTrailerState.consume(forItemId = itemId) ?: return
+        trailerHandoffPositionMs = handoff.positionMs
+        _uiState.update { state ->
+            state.copy(
+                trailerUrl = handoff.videoUrl,
+                trailerAudioUrl = handoff.audioUrl,
+                isTrailerPlaying = true,
+                isTrailerLoading = false,
+                showTrailerControls = false,
+                hideLogoDuringTrailer = false,
+                trailerInitialSeekMs = handoff.positionMs
+            )
+        }
+        trailerHasPlayed = true
     }
 
     private fun observeHideUnreleasedContent() {
@@ -1672,6 +1694,8 @@ class MetaDetailsViewModel @Inject constructor(
 
     private fun fetchTrailerUrl() {
         val meta = _uiState.value.meta ?: return
+        // Skip fetch if we already have a trailer from handoff
+        if (_uiState.value.trailerUrl != null && trailerHasPlayed) return
 
         trailerFetchJob?.cancel()
         trailerFetchJob = viewModelScope.launch {

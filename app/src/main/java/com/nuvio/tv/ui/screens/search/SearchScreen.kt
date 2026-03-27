@@ -68,8 +68,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import com.nuvio.tv.ui.components.CatalogRowSection
 import com.nuvio.tv.ui.components.EmptyScreenState
+import com.nuvio.tv.ui.components.NetflixStyleRow
 import com.nuvio.tv.ui.components.ErrorState
 import com.nuvio.tv.ui.components.LoadingIndicator
 import com.nuvio.tv.ui.components.PosterCardDefaults
@@ -521,27 +521,34 @@ fun SearchScreen(
                                 "${item.addonId}_${item.type}_${item.catalogId}_${trimmedSubmittedQuery}_$index"
                             }
                         ) { index, catalogRow ->
-                            CatalogRowSection(
-                                catalogRow = catalogRow,
-                                showPosterLabels = uiState.posterLabelsEnabled,
-                                showAddonName = uiState.catalogAddonNameEnabled,
-                                showCatalogTypeSuffix = uiState.catalogTypeSuffixEnabled,
-                                enableRowFocusRestorer = false,
-                                focusedItemIndex = if (focusResults && index == 0) 0 else -1,
-                                onItemFocused = {
+                            val rowTitle = remember(catalogRow.addonName, catalogRow.catalogName, uiState.catalogAddonNameEnabled, uiState.catalogTypeSuffixEnabled) {
+                                buildString {
+                                    if (uiState.catalogAddonNameEnabled) append("${catalogRow.addonName} • ")
+                                    append(catalogRow.catalogName)
+                                    if (uiState.catalogTypeSuffixEnabled) append(" (${catalogRow.apiType})")
+                                }
+                            }
+                            NetflixStyleRow(
+                                title = rowTitle,
+                                items = catalogRow.items,
+                                onItemClick = { item ->
+                                    viewModel.storeActiveTrailer(item)
+                                    onNavigateToDetail(item.id, catalogRow.apiType, catalogRow.addonBaseUrl)
+                                },
+                                trailerPreviewUrls = viewModel.trailerPreviewUrls,
+                                trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                                logoOverrides = viewModel.logoUrls,
+                                trailerEnabled = viewModel.trailerEnabled,
+                                trailerMuted = viewModel.trailerMuted,
+                                onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
+                                onItemFocus = { item -> viewModel.requestLogo(item) },
+                                onRowFocused = {
                                     if (focusResults) {
                                         focusResults = false
                                     }
                                 },
-                                onItemClick = { id, type, addonBaseUrl ->
-                                    onNavigateToDetail(id, type, addonBaseUrl)
-                                },
-                                onSeeAll = {
-                                    onNavigateToSeeAll(
-                                        catalogRow.catalogId,
-                                        catalogRow.addonId,
-                                        catalogRow.apiType
-                                    )
+                                onTrailerProgressChanged = { itemId, positionMs ->
+                                    viewModel.onTrailerProgressChanged(itemId, positionMs)
                                 }
                             )
                         }

@@ -53,6 +53,7 @@ fun TrailerPlayer(
     onRemoteKey: (keyCode: Int, action: Int, repeatCount: Int) -> Boolean = { _, _, _ -> false },
     cropToFill: Boolean = false,
     overscanZoom: Float = 1f,
+    initialSeekMs: Long = 0L,
     modifier: Modifier = Modifier,
     enter: EnterTransition = fadeIn(animationSpec = tween(800)),
     exit: ExitTransition = fadeOut(animationSpec = tween(500))
@@ -118,6 +119,9 @@ fun TrailerPlayer(
                 player.setMediaItem(MediaItem.fromUri(trailerUrl))
             }
             player.prepare()
+            if (initialSeekMs > 0L) {
+                player.seekTo(initialSeekMs)
+            }
             player.playWhenReady = true
         } else {
             hasRenderedFirstFrame = false

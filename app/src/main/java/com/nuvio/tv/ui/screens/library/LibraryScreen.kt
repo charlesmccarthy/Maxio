@@ -280,6 +280,7 @@ fun LibraryScreen(
                 title = group.title,
                 items = group.items.map { it.toMetaPreview() },
                 onItemClick = { item ->
+                    viewModel.storeActiveTrailer(item)
                     lastFocusedPosterKey = "${item.rawType}:${item.id}"
                     val entry = group.items.firstOrNull { it.id == item.id }
                     onNavigateToDetail(item.id, item.rawType, entry?.addonBaseUrl)
@@ -291,7 +292,10 @@ fun LibraryScreen(
                 trailerEnabled = viewModel.trailerEnabled,
                 trailerMuted = viewModel.trailerMuted,
                 onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
-                onItemFocus = { item -> viewModel.requestLogo(item) }
+                onItemFocus = { item -> viewModel.requestLogo(item) },
+                onTrailerProgressChanged = { itemId, positionMs ->
+                    viewModel.onTrailerProgressChanged(itemId, positionMs)
+                }
             )
         }
 

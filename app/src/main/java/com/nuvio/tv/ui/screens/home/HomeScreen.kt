@@ -377,6 +377,12 @@ private fun ClassicHomeRoute(
         onItemFocus = { item ->
             viewModel.onItemFocus(item)
         },
+        onStoreActiveTrailer = { item ->
+            viewModel.storeActiveTrailer(item)
+        },
+        onTrailerProgressChanged = { itemId, positionMs ->
+            viewModel.onTrailerProgressChanged(itemId, positionMs)
+        },
         onSaveFocusState = { vi, vo, ri, ii, m ->
             viewModel.saveFocusState(vi, vo, ri, ii, m)
         }

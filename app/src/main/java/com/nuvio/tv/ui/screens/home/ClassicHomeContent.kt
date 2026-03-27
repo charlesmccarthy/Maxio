@@ -62,6 +62,8 @@ fun ClassicHomeContent(
     onCatalogItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> },
     onRequestTrailerPreview: (MetaPreview) -> Unit,
     onItemFocus: (MetaPreview) -> Unit = {},
+    onStoreActiveTrailer: (MetaPreview) -> Unit = {},
+    onTrailerProgressChanged: (String, Long) -> Unit = { _, _ -> },
     onSaveFocusState: (Int, Int, Int, Int, Map<String, Int>) -> Unit
 ) {
 
@@ -292,6 +294,7 @@ fun ClassicHomeContent(
                 subtitle = catalogSubtitle,
                 items = catalogRow.items,
                 onItemClick = { item ->
+                    onStoreActiveTrailer(item)
                     onNavigateToDetail(item.id, item.apiType, catalogRow.addonBaseUrl)
                 },
                 onItemLongPress = { item ->
@@ -317,7 +320,8 @@ fun ClassicHomeContent(
                 onRowFocused = {
                     if (restoringFocus) restoringFocus = false
                     currentFocusSnapshot.rowIndex = index
-                }
+                },
+                onTrailerProgressChanged = onTrailerProgressChanged
             )
         }
     }

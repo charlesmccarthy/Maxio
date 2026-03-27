@@ -11,6 +11,7 @@ import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.remote.api.TmdbDiscoverResult
+import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
@@ -60,7 +61,8 @@ class DiscoveryBrowseViewModel @Inject constructor(
     private val tmdbService: TmdbService,
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val trailerService: TrailerService,
-    private val layoutPreferenceDataStore: LayoutPreferenceDataStore
+    private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val activeTrailerState: ActiveTrailerState
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiscoveryBrowseUiState())
@@ -77,6 +79,20 @@ class DiscoveryBrowseViewModel @Inject constructor(
         private set
     var trailerMuted: Boolean = true
         private set
+
+    // Trailer handoff support
+    private var lastTrailerItemId: String? = null
+    private var lastTrailerPositionMs: Long = 0L
+
+    fun onTrailerProgressChanged(itemId: String, positionMs: Long) {
+        lastTrailerItemId = itemId
+        lastTrailerPositionMs = positionMs
+    }
+
+    fun storeActiveTrailer(item: MetaPreview) {
+        val videoUrl = trailerPreviewUrls[item.id] ?: return
+        activeTrailerState.store(item.id, videoUrl, trailerPreviewAudioUrls[item.id], lastTrailerPositionMs)
+    }
 
     // Logo URL support
     val logoUrls = mutableStateMapOf<String, String>()

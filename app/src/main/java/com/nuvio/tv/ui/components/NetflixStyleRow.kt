@@ -99,7 +99,8 @@ fun NetflixStyleRow(
     focusRequester: FocusRequester? = null,
     initialSelectedIndex: Int = 0,
     onSelectedIndexChange: (Int) -> Unit = {},
-    onRowFocused: () -> Unit = {}
+    onRowFocused: () -> Unit = {},
+    onTrailerProgressChanged: (itemId: String, positionMs: Long) -> Unit = { _, _ -> }
 ) {
     if (items.isEmpty()) return
 
@@ -273,7 +274,8 @@ fun NetflixStyleRow(
                 trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
                 trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
                 trailerMuted = trailerMuted,
-                logoOverrides = logoOverrides
+                logoOverrides = logoOverrides,
+                onTrailerProgressChanged = onTrailerProgressChanged
             )
 
             // Poster strip (right) — fade+slide when index changes
@@ -352,7 +354,8 @@ private fun ExpandedCarouselCard(
     trailerPreviewUrl: String?,
     trailerPreviewAudioUrl: String?,
     trailerMuted: Boolean,
-    logoOverrides: Map<String, String> = emptyMap()
+    logoOverrides: Map<String, String> = emptyMap(),
+    onTrailerProgressChanged: (itemId: String, positionMs: Long) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -447,7 +450,10 @@ private fun ExpandedCarouselCard(
                     modifier = Modifier.fillMaxSize(),
                     muted = trailerMuted,
                     cropToFill = true,
-                    overscanZoom = 1.35f
+                    overscanZoom = 1.35f,
+                    onProgressChanged = { positionMs, _ ->
+                        onTrailerProgressChanged(items[selectedIndex].id, positionMs)
+                    }
                 )
             }
 

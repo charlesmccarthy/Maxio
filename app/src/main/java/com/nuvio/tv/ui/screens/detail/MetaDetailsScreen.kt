@@ -492,6 +492,7 @@ fun MetaDetailsScreen(
                     showTrailerControls = uiState.showTrailerControls,
                     hideLogoDuringTrailer = uiState.hideLogoDuringTrailer,
                     trailerButtonEnabled = uiState.trailerButtonEnabled,
+                    trailerInitialSeekMs = uiState.trailerInitialSeekMs,
                     trailerSeekToken = trailerSeekToken,
                     trailerSeekDeltaMs = trailerSeekDeltaMs,
                     onTrailerControlKey = { keyCode, action, repeatCount ->
@@ -661,6 +662,7 @@ private fun MetaDetailsContent(
     showTrailerControls: Boolean,
     hideLogoDuringTrailer: Boolean,
     trailerButtonEnabled: Boolean,
+    trailerInitialSeekMs: Long = 0L,
     trailerSeekToken: Int,
     trailerSeekDeltaMs: Long,
     onTrailerControlKey: (keyCode: Int, action: Int, repeatCount: Int) -> Boolean,
@@ -933,12 +935,10 @@ private fun MetaDetailsContent(
     val strTabCollection = stringResource(R.string.tmdb_collections_title)
     val peopleTabItems = remember(
         hasCastSection,
-        hasMoreLikeThisSection,
         hasRatingsSection,
         collection,
         castTabFocusRequester,
         ratingsTabFocusRequester,
-        moreLikeTabFocusRequester,
         collectionTabFocusRequester,
         collectionName
     ) {
@@ -958,15 +958,6 @@ private fun MetaDetailsContent(
                         tab = PeopleSectionTab.RATINGS,
                         label = strTabRatings,
                         focusRequester = ratingsTabFocusRequester
-                    )
-                )
-            }
-            if (hasMoreLikeThisSection) {
-                add(
-                    PeopleTabItem(
-                        tab = PeopleSectionTab.MORE_LIKE_THIS,
-                        label = strTabMoreLikeThis,
-                        focusRequester = moreLikeTabFocusRequester
                     )
                 )
             }
@@ -1031,6 +1022,7 @@ private fun MetaDetailsContent(
         else -> null
     }
     val commentsUpFocusRequester = when {
+        hasMoreLikeThisSection -> moreLikeSectionFocusRequester
         hasPeopleSection -> when (activePeopleTab) {
             PeopleSectionTab.CAST -> castSectionFocusRequester
             PeopleSectionTab.MORE_LIKE_THIS -> moreLikeSectionFocusRequester
@@ -1209,6 +1201,7 @@ private fun MetaDetailsContent(
             isScrolledPastHero = isScrolledPastHero,
             leftGradient = leftGradientBitmap,
             bottomGradient = bottomGradientBitmap,
+            trailerInitialSeekMs = trailerInitialSeekMs,
         )
 
         // Single scrollable column with hero + content
@@ -1378,22 +1371,9 @@ private fun MetaDetailsContent(
                             }
 
                             PeopleSectionTab.MORE_LIKE_THIS -> {
-                                MoreLikeThisSection(
-                                    items = moreLikeThis,
-                                    upFocusRequester = if (hasPeopleTabs) moreLikeTabFocusRequester else seasonDownFocusRequester,
-                                    sectionFocusRequester = moreLikeSectionFocusRequester,
-                                    restoreItemId = if (pendingRestoreType == RestoreTarget.MORE_LIKE_THIS) pendingRestoreMoreLikeItemId else null,
-                                    restoreFocusToken = if (pendingRestoreType == RestoreTarget.MORE_LIKE_THIS) restoreFocusToken else 0,
-                                    onRestoreFocusHandled = {
-                                        clearPendingRestore()
-                                    },
-                                    onItemClick = { item ->
-                                        markMoreLikeThisRestore(item.id)
-                                        onNavigateToDetail(item.id, item.apiType, null)
-                                    }
-                                )
+                                // Handled as standalone row below
                             }
-                            
+
                             PeopleSectionTab.COLLECTION -> {
                                 CollectionSection(
                                     items = collection,
@@ -1428,6 +1408,42 @@ private fun MetaDetailsContent(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            if (hasMoreLikeThisSection) {
+                item(key = "more_like_this_row", contentType = "horizontal_row") {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = strTabMoreLikeThis,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = NuvioColors.TextPrimary,
+                            modifier = Modifier.padding(start = 48.dp, top = 20.dp, bottom = 8.dp)
+                        )
+                        MoreLikeThisSection(
+                            items = moreLikeThis,
+                            upFocusRequester = when {
+                                hasPeopleSection -> when (activePeopleTab) {
+                                    PeopleSectionTab.CAST -> castSectionFocusRequester
+                                    PeopleSectionTab.COLLECTION -> collectionSectionFocusRequester
+                                    PeopleSectionTab.RATINGS -> ratingsContentFocusRequester
+                                    else -> castSectionFocusRequester
+                                }
+                                isSeries -> seasonDownFocusRequester ?: heroPlayFocusRequester
+                                else -> heroPlayFocusRequester
+                            },
+                            sectionFocusRequester = moreLikeSectionFocusRequester,
+                            restoreItemId = if (pendingRestoreType == RestoreTarget.MORE_LIKE_THIS) pendingRestoreMoreLikeItemId else null,
+                            restoreFocusToken = if (pendingRestoreType == RestoreTarget.MORE_LIKE_THIS) restoreFocusToken else 0,
+                            onRestoreFocusHandled = {
+                                clearPendingRestore()
+                            },
+                            onItemClick = { item ->
+                                markMoreLikeThisRestore(item.id)
+                                onNavigateToDetail(item.id, item.apiType, null)
+                            }
+                        )
                     }
                 }
             }
@@ -1606,6 +1622,7 @@ private fun BackdropLayer(
     isScrolledPastHero: Boolean,
     leftGradient: ImageBitmap,
     bottomGradient: ImageBitmap,
+    trailerInitialSeekMs: Long = 0L,
 ) {
     val backdropAlphaState = animateFloatAsState(
         targetValue = if (isTrailerPlaying) 0f else if (isScrolledPastHero) 0.15f else 1f,
@@ -1634,6 +1651,7 @@ private fun BackdropLayer(
             onRemoteKey = onTrailerControlKey,
             onProgressChanged = onTrailerProgressChanged,
             onEnded = onTrailerEnded,
+            initialSeekMs = trailerInitialSeekMs,
             modifier = Modifier.fillMaxSize()
         )
         Box(

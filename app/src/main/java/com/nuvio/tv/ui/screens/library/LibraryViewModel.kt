@@ -8,6 +8,7 @@ import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.repository.TraktLibraryService
+import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.MetaPreview
 import kotlinx.coroutines.Dispatchers
@@ -126,7 +127,8 @@ class LibraryViewModel @Inject constructor(
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val trailerService: TrailerService,
     private val tmdbService: TmdbService,
-    private val tmdbApi: TmdbApi
+    private val tmdbApi: TmdbApi,
+    private val activeTrailerState: ActiveTrailerState
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -231,6 +233,20 @@ class LibraryViewModel @Inject constructor(
                 logoLoadingIds.remove(itemId)
             }
         }
+    }
+
+    // Trailer handoff support
+    private var lastTrailerItemId: String? = null
+    private var lastTrailerPositionMs: Long = 0L
+
+    fun onTrailerProgressChanged(itemId: String, positionMs: Long) {
+        lastTrailerItemId = itemId
+        lastTrailerPositionMs = positionMs
+    }
+
+    fun storeActiveTrailer(item: MetaPreview) {
+        val videoUrl = trailerPreviewUrls[item.id] ?: return
+        activeTrailerState.store(item.id, videoUrl, trailerPreviewAudioUrls[item.id], lastTrailerPositionMs)
     }
 
     fun onScreenEntered() {

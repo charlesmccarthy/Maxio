@@ -15,6 +15,7 @@ import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.WatchedItemsPreferences
 import com.nuvio.tv.data.repository.MDBListRepository
+import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.CatalogDescriptor
@@ -60,7 +61,8 @@ class HomeViewModel @Inject constructor(
     internal val tmdbMetadataService: TmdbMetadataService,
     internal val trailerService: TrailerService,
     internal val watchedItemsPreferences: WatchedItemsPreferences,
-    internal val mdbListRepository: MDBListRepository
+    internal val mdbListRepository: MDBListRepository,
+    private val activeTrailerState: ActiveTrailerState
 ) : ViewModel() {
     companion object {
         internal const val TAG = "HomeViewModel"
@@ -156,6 +158,20 @@ class HomeViewModel @Inject constructor(
         get() = trailerPreviewUrlsState
     val trailerPreviewAudioUrls: Map<String, String>
         get() = trailerPreviewAudioUrlsState
+
+    // Trailer handoff support
+    private var lastTrailerItemId: String? = null
+    private var lastTrailerPositionMs: Long = 0L
+
+    fun onTrailerProgressChanged(itemId: String, positionMs: Long) {
+        lastTrailerItemId = itemId
+        lastTrailerPositionMs = positionMs
+    }
+
+    fun storeActiveTrailer(item: MetaPreview) {
+        val videoUrl = trailerPreviewUrlsState[item.id] ?: return
+        activeTrailerState.store(item.id, videoUrl, trailerPreviewAudioUrlsState[item.id], lastTrailerPositionMs)
+    }
 
     internal val heroMdbListRatingsState = mutableStateMapOf<String, MDBListRatings>()
     val heroMdbListRatings: Map<String, MDBListRatings>

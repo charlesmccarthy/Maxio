@@ -1,12 +1,19 @@
 package com.nuvio.tv.ui.screens.search
 
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.remote.api.TmdbApi
+import com.nuvio.tv.data.trailer.ActiveTrailerState
+import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.CatalogRow
+import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.skipStep
 import com.nuvio.tv.domain.model.supportsExtra
 import com.nuvio.tv.core.util.filterReleasedItems
@@ -15,6 +22,7 @@ import com.nuvio.tv.domain.repository.AddonRepository
 import java.time.LocalDate
 import com.nuvio.tv.domain.repository.CatalogRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +39,11 @@ import javax.inject.Inject
 class SearchViewModel @Inject constructor(
     private val addonRepository: AddonRepository,
     private val catalogRepository: CatalogRepository,
-    private val layoutPreferenceDataStore: LayoutPreferenceDataStore
+    private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val trailerService: TrailerService,
+    private val tmdbService: TmdbService,
+    private val tmdbApi: TmdbApi,
+    private val activeTrailerState: ActiveTrailerState
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -39,6 +51,21 @@ class SearchViewModel @Inject constructor(
 
     private val catalogsMap = linkedMapOf<String, CatalogRow>()
     private val catalogOrder = mutableListOf<String>()
+
+    // Trailer preview support
+    val trailerPreviewUrls = mutableStateMapOf<String, String>()
+    val trailerPreviewAudioUrls = mutableStateMapOf<String, String>()
+    private val trailerNegativeCache = mutableSetOf<String>()
+    private val trailerLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    var trailerEnabled: Boolean = false
+        private set
+    var trailerMuted: Boolean = true
+        private set
+
+    // Logo URL support
+    val logoUrls = mutableStateMapOf<String, String>()
+    private val logoNegativeCache = mutableSetOf<String>()
+    private val logoLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private var activeSearchJobs: List<Job> = emptyList()
     private var discoverJob: Job? = null
@@ -108,6 +135,98 @@ class SearchViewModel @Inject constructor(
                 scheduleCatalogRowsUpdate()
             }
         }
+        observeTrailerPrefs()
+    }
+
+    private fun observeTrailerPrefs() {
+        viewModelScope.launch {
+            combine(
+                layoutPreferenceDataStore.focusedPosterBackdropTrailerEnabled,
+                layoutPreferenceDataStore.focusedPosterBackdropTrailerMuted
+            ) { enabled, muted -> enabled to muted }
+                .collect { (enabled, muted) ->
+                    trailerEnabled = enabled
+                    trailerMuted = muted
+                }
+        }
+    }
+
+    fun requestTrailerPreview(item: MetaPreview) {
+        val itemId = item.id
+        if (trailerNegativeCache.contains(itemId)) return
+        if (trailerPreviewUrls.containsKey(itemId)) return
+        if (!trailerLoadingIds.add(itemId)) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tmdbId = runCatching { tmdbService.ensureTmdbId(itemId, item.apiType) }.getOrNull()
+                val yearStr = item.releaseInfo?.let { Regex("""\b(19|20)\d{2}\b""").find(it)?.value }
+                val source = trailerService.getTrailerPlaybackSource(
+                    title = item.name, year = yearStr, tmdbId = tmdbId, type = item.apiType
+                )
+                if (source?.videoUrl != null) {
+                    trailerPreviewUrls[itemId] = source.videoUrl
+                    source.audioUrl?.takeIf { it.isNotBlank() }?.let { trailerPreviewAudioUrls[itemId] = it }
+                } else {
+                    trailerNegativeCache.add(itemId)
+                }
+            } catch (_: Exception) {
+                trailerNegativeCache.add(itemId)
+            } finally {
+                trailerLoadingIds.remove(itemId)
+            }
+        }
+    }
+
+    fun requestLogo(item: MetaPreview) {
+        val itemId = item.id
+        if (!item.logo.isNullOrBlank()) return
+        if (logoUrls.containsKey(itemId)) return
+        if (logoNegativeCache.contains(itemId)) return
+        if (!logoLoadingIds.add(itemId)) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tmdbIdStr = runCatching { tmdbService.ensureTmdbId(itemId, item.apiType) }.getOrNull()
+                val tmdbId = tmdbIdStr?.toIntOrNull()
+                if (tmdbId == null) {
+                    logoNegativeCache.add(itemId)
+                    return@launch
+                }
+                val isMovie = item.apiType.equals("movie", ignoreCase = true)
+                val response = if (isMovie) {
+                    tmdbApi.getMovieImages(movieId = tmdbId, apiKey = BuildConfig.TMDB_API_KEY)
+                } else {
+                    tmdbApi.getTvImages(tvId = tmdbId, apiKey = BuildConfig.TMDB_API_KEY)
+                }
+                val logoPath = response.body()?.logos
+                    ?.firstOrNull { it.iso6391 == "en" || it.iso6391 == null }
+                    ?.filePath
+                if (logoPath != null) {
+                    logoUrls[itemId] = "https://image.tmdb.org/t/p/w500$logoPath"
+                } else {
+                    logoNegativeCache.add(itemId)
+                }
+            } catch (_: Exception) {
+                logoNegativeCache.add(itemId)
+            } finally {
+                logoLoadingIds.remove(itemId)
+            }
+        }
+    }
+
+    // Trailer handoff support
+    private var lastTrailerItemId: String? = null
+    private var lastTrailerPositionMs: Long = 0L
+
+    fun onTrailerProgressChanged(itemId: String, positionMs: Long) {
+        lastTrailerItemId = itemId
+        lastTrailerPositionMs = positionMs
+    }
+
+    fun storeActiveTrailer(item: MetaPreview) {
+        val videoUrl = trailerPreviewUrls[item.id] ?: return
+        activeTrailerState.store(item.id, videoUrl, trailerPreviewAudioUrls[item.id], lastTrailerPositionMs)
     }
 
     private data class LayoutPrefs(
@@ -253,6 +372,15 @@ class SearchViewModel @Inject constructor(
         catalogOrder.clear()
         hasRenderedFirstCatalog = false
         pendingCatalogResponses = 0
+
+        // Clear trailer/logo caches for new search
+        trailerPreviewUrls.clear()
+        trailerPreviewAudioUrls.clear()
+        trailerNegativeCache.clear()
+        trailerLoadingIds.clear()
+        logoUrls.clear()
+        logoNegativeCache.clear()
+        logoLoadingIds.clear()
 
         if (query.length < 2) {
             _uiState.update {
