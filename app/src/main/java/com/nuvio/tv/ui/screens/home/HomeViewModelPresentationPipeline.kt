@@ -225,15 +225,12 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
     apiType: String,
     fallbackYtId: String? = null
 ) {
-    if (activeTrailerPreviewItemId != itemId) {
-        activeTrailerPreviewItemId = itemId
-        trailerPreviewRequestVersion++
-    }
-
     if (trailerPreviewNegativeCache.contains(itemId)) return
     if (trailerPreviewUrlsState.containsKey(itemId)) return
     if (!trailerPreviewLoadingIds.add(itemId)) return
 
+    // Capture version so negative-cache writes from stale requests don't
+    // overwrite results from retries triggered by enrichExternalMeta.
     val requestVersion = trailerPreviewRequestVersion
 
     viewModelScope.launch {
@@ -241,11 +238,6 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
         val graceRemaining = remainingStartupGraceMs()
         if (graceRemaining > 0) {
             delay(graceRemaining)
-            // Re-check if this is still the latest request after waiting
-            if (activeTrailerPreviewItemId != itemId || trailerPreviewRequestVersion != requestVersion) {
-                trailerPreviewLoadingIds.remove(itemId)
-                return@launch
-            }
         }
 
         val tmdbId = try {
@@ -260,13 +252,6 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
             tmdbId = tmdbId,
             type = apiType
         )
-
-        val isLatestFocusedItem =
-            activeTrailerPreviewItemId == itemId && trailerPreviewRequestVersion == requestVersion
-        if (!isLatestFocusedItem) {
-            trailerPreviewLoadingIds.remove(itemId)
-            return@launch
-        }
 
         if (trailerSource?.videoUrl.isNullOrBlank()) {
             val fallbackSource = fallbackYtId?.let { ytId ->
@@ -287,9 +272,13 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
                     trailerPreviewAudioUrlsState[itemId] = fallbackAudio
                 }
             } else {
-                trailerPreviewNegativeCache.add(itemId)
-                trailerPreviewUrlsState.remove(itemId)
-                trailerPreviewAudioUrlsState.remove(itemId)
+                // Only negative-cache if the request version hasn't been bumped
+                // (a bumped version means a retry with new data is in-flight).
+                if (trailerPreviewRequestVersion == requestVersion) {
+                    trailerPreviewNegativeCache.add(itemId)
+                    trailerPreviewUrlsState.remove(itemId)
+                    trailerPreviewAudioUrlsState.remove(itemId)
+                }
             }
         } else {
             val videoUrl = trailerSource.videoUrl
