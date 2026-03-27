@@ -234,7 +234,7 @@ fun MetaDetailsScreen(
     BackHandler {
         if (selectedComment != null) {
             viewModel.onEvent(MetaDetailsEvent.OnDismissCommentOverlay)
-        } else if (uiState.isTrailerPlaying) {
+        } else if (uiState.isTrailerPlaying && !uiState.trailerBackgroundMode) {
             restorePlayFocusAfterTrailerBackToken += 1
             viewModel.onEvent(MetaDetailsEvent.OnTrailerEnded)
         } else {
@@ -327,10 +327,13 @@ fun MetaDetailsScreen(
                             else -> false
                         }
                     }
-                    // During auto trailer preview, consume all keys except back/ESC so content doesn't scroll.
-                    val keyCode = keyEvent.nativeKeyEvent.keyCode
-                    return@onPreviewKeyEvent keyCode != KeyEvent.KEYCODE_BACK &&
-                            keyCode != KeyEvent.KEYCODE_ESCAPE
+                    // During auto trailer preview (non-background), consume all keys except back/ESC so content doesn't scroll.
+                    // In background mode (handoff), let all keys through so user can browse details.
+                    if (!uiState.trailerBackgroundMode) {
+                        val keyCode = keyEvent.nativeKeyEvent.keyCode
+                        return@onPreviewKeyEvent keyCode != KeyEvent.KEYCODE_BACK &&
+                                keyCode != KeyEvent.KEYCODE_ESCAPE
+                    }
                 }
                 if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                     val nativeEvent = keyEvent.nativeKeyEvent

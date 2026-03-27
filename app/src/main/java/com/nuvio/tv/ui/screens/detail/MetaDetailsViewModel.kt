@@ -143,7 +143,8 @@ class MetaDetailsViewModel @Inject constructor(
                 isTrailerLoading = false,
                 showTrailerControls = false,
                 hideLogoDuringTrailer = false,
-                trailerInitialSeekMs = handoff.positionMs
+                trailerInitialSeekMs = handoff.positionMs,
+                trailerBackgroundMode = true
             )
         }
         trailerHasPlayed = true
