@@ -59,6 +59,8 @@ import kotlinx.coroutines.delay
 
 private const val AUTO_ADVANCE_INTERVAL_MS = 10000L
 private const val HERO_TRAILER_REQUEST_DEBOUNCE_MS = 150L
+private const val HERO_TRAILER_PREFETCH_DELAY_MS = 1200L
+private val HERO_TRAILER_PREFETCH_OFFSETS = listOf(1, -1, 2, -2, 3, 4)
 private val HERO_SHAPE = RoundedCornerShape(18.dp)
 private val YEAR_REGEX = Regex("""\b\d{4}\b""")
 
@@ -100,10 +102,17 @@ fun HeroCarousel(
     LaunchedEffect(isFocused, activeItem, trailerEnabled) {
         if (!isFocused || !trailerEnabled) return@LaunchedEffect
         val item = activeItem ?: return@LaunchedEffect
-        if (trailerPreviewUrls.containsKey(item.id)) return@LaunchedEffect
         delay(HERO_TRAILER_REQUEST_DEBOUNCE_MS)
-        if (isFocused && activeItem?.id == item.id) {
+        if (isFocused && activeItem.id == item.id) {
             onRequestTrailerPreview(item)
+            delay(HERO_TRAILER_PREFETCH_DELAY_MS)
+            if (isFocused && activeItem.id == item.id) {
+                val size = items.size
+                HERO_TRAILER_PREFETCH_OFFSETS.forEach { offset ->
+                    val prefetchIndex = (activeIndex + offset + size) % size
+                    onRequestTrailerPreview(items[prefetchIndex])
+                }
+            }
         }
     }
 
