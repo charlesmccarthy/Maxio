@@ -70,6 +70,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.platform.LocalContext
@@ -89,6 +90,8 @@ fun HeroContentSection(
     isInLibrary: Boolean,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
+    isLiked: Boolean,
+    onToggleLiked: () -> Unit,
     isMovieWatched: Boolean,
     isMovieWatchedPending: Boolean,
     onToggleMovieWatched: () -> Unit,
@@ -254,6 +257,20 @@ fun HeroContentSection(
                             contentDescription = if (isInLibrary) stringResource(R.string.hero_remove_from_library) else stringResource(R.string.hero_add_to_library),
                             onClick = onToggleLibrary,
                             onLongPress = onLibraryLongPress,
+                            onFocused = onHeroActionFocused
+                        )
+
+                        ActionIconButton(
+                            icon = Icons.Default.ThumbUp,
+                            contentDescription = if (isLiked) {
+                                stringResource(R.string.media_unlike)
+                            } else {
+                                stringResource(R.string.media_like)
+                            },
+                            onClick = onToggleLiked,
+                            selected = isLiked,
+                            selectedContainerColor = Color.White,
+                            selectedContentColor = Color.Black,
                             onFocused = onHeroActionFocused
                         )
 

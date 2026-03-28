@@ -60,6 +60,7 @@ internal fun HomeViewModel.observeTmdbSettingsPipeline() {
             .distinctUntilChanged()
             .collectLatest { settings ->
                 currentTmdbSettings = settings
+                refreshLikedRecommendationRowsPipeline()
                 scheduleUpdateCatalogRows()
             }
     }
@@ -287,6 +288,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     val currentGridItems = _uiState.value.gridItems
     val heroSectionEnabled = _uiState.value.heroSectionEnabled
     val hideUnreleased = _uiState.value.hideUnreleasedContent
+    val likedRowsSnapshot = likedRecommendationRows.toList()
 
     val (displayRows, baseHeroItems, baseGridItems, fullRowsFiltered) = withContext(Dispatchers.Default) {
         val rawRows = orderedKeys.mapNotNull { key -> catalogSnapshot[key] }
@@ -349,7 +351,21 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             else -> emptyList()
         }
 
-        val computedDisplayRows = orderedRows.map { row ->
+        val displayRowsSource = if (likedRowsSnapshot.isEmpty()) {
+            orderedRows
+        } else {
+            buildList {
+                if (orderedRows.isEmpty()) {
+                    addAll(likedRowsSnapshot)
+                } else {
+                    add(orderedRows.first())
+                    addAll(likedRowsSnapshot)
+                    addAll(orderedRows.drop(1))
+                }
+            }
+        }
+
+        val computedDisplayRows = displayRowsSource.map { row ->
             val shouldKeepFullRowInModern = currentLayout == HomeLayout.MODERN && row.supportsSkip
             if (row.items.size > 25 && !shouldKeepFullRowInModern) {
                 val key = "${row.addonId}_${row.apiType}_${row.catalogId}"

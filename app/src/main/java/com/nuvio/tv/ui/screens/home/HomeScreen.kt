@@ -140,7 +140,9 @@ fun HomeScreen(
     }
 
     Box(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
     ) {
         val hasAnyContent = uiState.catalogRows.isNotEmpty() ||
             uiState.continueWatchingItems.isNotEmpty() ||
@@ -227,6 +229,9 @@ fun HomeScreen(
                                 showContinueWatchingManualPlayOption = effectiveAutoplayEnabled,
                                 onNavigateToCatalogSeeAll = onNavigateToCatalogSeeAll,
                                 isCatalogItemWatched = isCatalogItemWatched,
+                                isCatalogItemLiked = { item ->
+                                    viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true
+                                },
                                 onCatalogItemLongPress = onCatalogItemLongPress
                             )
 
@@ -296,6 +301,7 @@ fun HomeScreen(
     if (selectedPoster != null) {
         val item = selectedPoster.item
         val statusKey = homeItemStatusKey(item.id, item.apiType)
+        val likedKey = "${item.apiType}:${item.id}"
         val isMovie = item.apiType.equals("movie", ignoreCase = true)
         HomePosterOptionsDialog(
             title = item.name,
@@ -303,6 +309,7 @@ fun HomeScreen(
             isLibraryPending = statusKey in uiState.posterLibraryPending,
             showManageLists = uiState.librarySourceMode == LibrarySourceMode.TRAKT,
             isMovie = isMovie,
+            isLiked = viewModel.likedItemStatus[likedKey] == true,
             isWatched = uiState.movieWatchedStatus[statusKey] == true,
             isWatchedPending = statusKey in uiState.movieWatchedPending,
             onDismiss = { posterOptionsTarget = null },
@@ -320,6 +327,10 @@ fun HomeScreen(
             },
             onToggleWatched = {
                 viewModel.togglePosterMovieWatched(item)
+                posterOptionsTarget = null
+            },
+            onToggleLike = {
+                viewModel.toggleLikedItem(item)
                 posterOptionsTarget = null
             }
         )
@@ -351,6 +362,7 @@ private fun ClassicHomeRoute(
     showContinueWatchingManualPlayOption: Boolean,
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean,
+    isCatalogItemLiked: (MetaPreview) -> Boolean,
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
 ) {
     val focusState by viewModel.focusState.collectAsStateWithLifecycle()
@@ -360,6 +372,8 @@ private fun ClassicHomeRoute(
         focusState = focusState,
         trailerPreviewUrls = viewModel.trailerPreviewUrls,
         trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+        trailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
+        trailerMuted = uiState.focusedPosterBackdropTrailerMuted,
         onNavigateToDetail = onNavigateToDetail,
         onContinueWatchingClick = onContinueWatchingClick,
         onContinueWatchingStartFromBeginning = onContinueWatchingStartFromBeginning,
@@ -370,6 +384,7 @@ private fun ClassicHomeRoute(
             viewModel.onEvent(HomeEvent.OnRemoveContinueWatching(contentId, season, episode, isNextUp))
         },
         isCatalogItemWatched = isCatalogItemWatched,
+        isCatalogItemLiked = isCatalogItemLiked,
         onCatalogItemLongPress = onCatalogItemLongPress,
         onRequestTrailerPreview = { item ->
             viewModel.requestTrailerPreview(item)
@@ -408,6 +423,10 @@ private fun GridHomeRoute(
         uiState = uiState,
         posterCardStyle = posterCardStyle,
         gridFocusState = gridFocusState,
+        trailerPreviewUrls = viewModel.trailerPreviewUrls,
+        trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+        trailerEnabled = uiState.focusedPosterBackdropTrailerEnabled,
+        trailerMuted = uiState.focusedPosterBackdropTrailerMuted,
         onNavigateToDetail = onNavigateToDetail,
         onContinueWatchingClick = onContinueWatchingClick,
         onContinueWatchingStartFromBeginning = onContinueWatchingStartFromBeginning,
@@ -419,6 +438,9 @@ private fun GridHomeRoute(
         },
         isCatalogItemWatched = isCatalogItemWatched,
         onCatalogItemLongPress = onCatalogItemLongPress,
+        onRequestTrailerPreview = { item ->
+            viewModel.requestTrailerPreview(item)
+        },
         onItemFocus = { item ->
             viewModel.onItemFocus(item)
         },
@@ -503,12 +525,14 @@ private fun HomePosterOptionsDialog(
     isLibraryPending: Boolean,
     showManageLists: Boolean,
     isMovie: Boolean,
+    isLiked: Boolean,
     isWatched: Boolean,
     isWatchedPending: Boolean,
     onDismiss: () -> Unit,
     onDetails: () -> Unit,
     onToggleLibrary: () -> Unit,
-    onToggleWatched: () -> Unit
+    onToggleWatched: () -> Unit,
+    onToggleLike: () -> Unit
 ) {
     val primaryFocusRequester = remember { FocusRequester() }
 
@@ -552,6 +576,23 @@ private fun HomePosterOptionsDialog(
                     } else {
                         stringResource(R.string.hero_add_to_library)
                     }
+                }
+            )
+        }
+
+        Button(
+            onClick = onToggleLike,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.colors(
+                containerColor = NuvioColors.BackgroundCard,
+                contentColor = NuvioColors.TextPrimary
+            )
+        ) {
+            Text(
+                if (isLiked) {
+                    stringResource(R.string.media_unlike)
+                } else {
+                    stringResource(R.string.media_like)
                 }
             )
         }

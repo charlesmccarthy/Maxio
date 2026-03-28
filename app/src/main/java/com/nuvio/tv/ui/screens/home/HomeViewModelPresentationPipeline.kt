@@ -298,7 +298,6 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
 }
 
 internal fun HomeViewModel.onItemFocusPipeline(item: MetaPreview) {
-    if (startupGracePeriodActive) return
     if (item.id in prefetchedTmdbIds || item.id in prefetchedExternalMetaIds) return
     if (pendingTmdbEnrichItemId == item.id) return
 
@@ -316,6 +315,10 @@ internal fun HomeViewModel.onItemFocusPipeline(item: MetaPreview) {
     pendingTmdbEnrichItemId = item.id
     tmdbEnrichFocusJob?.cancel()
     tmdbEnrichFocusJob = viewModelScope.launch(Dispatchers.IO) {
+        val graceRemaining = remainingStartupGraceMs()
+        if (graceRemaining > 0) {
+            delay(graceRemaining)
+        }
         delay(HomeViewModel.EXTERNAL_META_PREFETCH_FOCUS_DEBOUNCE_MS)
         if (pendingTmdbEnrichItemId != item.id) {
             if (_enrichingItemId.value == item.id) setEnrichingItemId(null)

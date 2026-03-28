@@ -58,6 +58,7 @@ import coil.request.ImageRequest
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PersonDetail
 import com.nuvio.tv.ui.components.GridContentCard
+import com.nuvio.tv.ui.components.NetflixStyleRow
 import com.nuvio.tv.ui.components.PosterCardStyle
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -100,6 +101,7 @@ fun CastDetailScreen(
                 is CastDetailUiState.Success -> {
                     CastDetailContent(
                         person = state.personDetail,
+                        viewModel = viewModel,
                         onNavigateToDetail = onNavigateToDetail
                     )
                 }
@@ -112,6 +114,7 @@ fun CastDetailScreen(
 @Composable
 private fun CastDetailContent(
     person: PersonDetail,
+    viewModel: CastDetailViewModel,
     onNavigateToDetail: (itemId: String, itemType: String, addonBaseUrl: String?) -> Unit
 ) {
     val backgroundColor = NuvioColors.Background
@@ -164,13 +167,16 @@ private fun CastDetailContent(
                 HeroSection(person = person)
 
                 if (allCredits.isNotEmpty()) {
-                    SectionHeader(
-                        title = stringResource(R.string.cast_detail_filmography),
-                        count = allCredits.size
-                    )
                     FilmographyRow(
+                        title = stringResource(R.string.cast_detail_filmography),
                         credits = allCredits,
-                        posterCardStyle = filmographyPosterStyle,
+                        trailerPreviewUrls = viewModel.trailerPreviewUrls,
+                        trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                        logoOverrides = viewModel.logoUrls,
+                        trailerEnabled = viewModel.trailerEnabled,
+                        trailerMuted = viewModel.trailerMuted,
+                        onRequestTrailerPreview = viewModel::requestTrailerPreview,
+                        onItemFocus = viewModel::requestLogo,
                         firstItemFocusRequester = firstPosterFocusRequester,
                         onItemClick = { item ->
                             onNavigateToDetail(item.id, item.apiType, null)
@@ -367,41 +373,32 @@ private fun SectionHeader(title: String, count: Int) {
 
 @Composable
 private fun FilmographyRow(
+    title: String,
     credits: List<MetaPreview>,
-    posterCardStyle: PosterCardStyle,
+    trailerPreviewUrls: Map<String, String>,
+    trailerPreviewAudioUrls: Map<String, String>,
+    logoOverrides: Map<String, String>,
+    trailerEnabled: Boolean,
+    trailerMuted: Boolean,
+    onRequestTrailerPreview: (MetaPreview) -> Unit,
+    onItemFocus: (MetaPreview) -> Unit,
     firstItemFocusRequester: FocusRequester,
     onItemClick: (MetaPreview) -> Unit
 ) {
-    val hasRequestedInitialFocus = remember(credits) { mutableStateOf(false) }
-
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        itemsIndexed(
-            items = credits,
-            key = { _, item -> item.id + item.name }
-        ) { index, item ->
-            GridContentCard(
-                item = item,
-                onClick = { onItemClick(item) },
-                modifier = if (index == 0) {
-                    Modifier.onGloballyPositioned {
-                        if (!hasRequestedInitialFocus.value) {
-                            hasRequestedInitialFocus.value = true
-                            runCatching { firstItemFocusRequester.requestFocus() }
-                        }
-                    }
-                } else {
-                    Modifier
-                },
-                posterCardStyle = posterCardStyle,
-                showLabel = true,
-                focusRequester = if (index == 0) firstItemFocusRequester else null
-            )
-        }
-    }
+    NetflixStyleRow(
+        title = title,
+        subtitle = "${credits.size} titles",
+        items = credits,
+        focusRequester = firstItemFocusRequester,
+        onItemClick = onItemClick,
+        trailerPreviewUrls = trailerPreviewUrls,
+        trailerPreviewAudioUrls = trailerPreviewAudioUrls,
+        logoOverrides = logoOverrides,
+        trailerEnabled = trailerEnabled,
+        trailerMuted = trailerMuted,
+        onRequestTrailerPreview = onRequestTrailerPreview,
+        onItemFocus = onItemFocus
+    )
 }
 
 // ─── Loading / Error States ───

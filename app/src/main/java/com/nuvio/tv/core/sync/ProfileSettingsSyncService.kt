@@ -79,7 +79,8 @@ class ProfileSettingsSyncService @Inject constructor(
         "tmdb_settings",
         "mdblist_settings",
         "animeskip_settings",
-        "track_preference"
+        "track_preference",
+        "liked_media"
     )
 
     init {

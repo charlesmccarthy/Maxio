@@ -18,6 +18,7 @@ data class MetaDetailsUiState(
     val seasons: List<Int> = emptyList(),
     val episodesForSeason: List<Video> = emptyList(),
     val isInLibrary: Boolean = false,
+    val isLiked: Boolean = false,
     val nextToWatch: NextToWatch? = null,
     val episodeProgressMap: Map<Pair<Int, Int>, WatchProgress> = emptyMap(),
     val trailerUrl: String? = null,
@@ -67,6 +68,7 @@ sealed class MetaDetailsEvent {
     data class OnEpisodeClick(val video: Video) : MetaDetailsEvent()
     data object OnPlayClick : MetaDetailsEvent()
     data object OnToggleLibrary : MetaDetailsEvent()
+    data object OnToggleLiked : MetaDetailsEvent()
     data object OnRetry : MetaDetailsEvent()
     data object OnRetryComments : MetaDetailsEvent()
     data class OnCommentSelected(val review: TraktCommentReview) : MetaDetailsEvent()

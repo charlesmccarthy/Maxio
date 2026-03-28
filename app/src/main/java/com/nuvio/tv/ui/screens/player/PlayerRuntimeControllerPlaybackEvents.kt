@@ -290,8 +290,10 @@ internal fun PlayerRuntimeController.scheduleProgressSyncAfterSeek() {
 
 fun PlayerRuntimeController.scheduleHideControls() {
     hideControlsJob?.cancel()
+    if (controlsAutoHidePaused) return
     hideControlsJob = scope.launch {
         delay(3000)
+        if (controlsAutoHidePaused) return@launch
         if (_uiState.value.isPlaying && !_uiState.value.showAudioOverlay &&
             !_uiState.value.showSubtitleOverlay && !_uiState.value.showSubtitleStylePanel &&
             !_uiState.value.showSpeedDialog && !_uiState.value.showMoreDialog &&
@@ -300,6 +302,16 @@ fun PlayerRuntimeController.scheduleHideControls() {
             !_uiState.value.showStreamInfoOverlay) {
             _uiState.update { it.copy(showControls = false) }
         }
+    }
+}
+
+fun PlayerRuntimeController.setControlsAutoHidePaused(paused: Boolean) {
+    controlsAutoHidePaused = paused
+    if (paused) {
+        hideControlsJob?.cancel()
+        hideControlsJob = null
+    } else if (_uiState.value.showControls) {
+        scheduleHideControls()
     }
 }
 

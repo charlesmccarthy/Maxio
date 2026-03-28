@@ -96,6 +96,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val MODERN_HORIZONTAL_FOCUS_DEBOUNCE_MS = 140L
 private const val POSTER_PREFETCH_DISTANCE = 8
+private const val MODERN_EXPANDED_CARD_WIDTH_MULTIPLIER = 1.12f
 
 internal val LocalVerticalRowsScrolling = androidx.compose.runtime.compositionLocalOf { false }
 
@@ -666,7 +667,7 @@ private fun ModernCarouselCard(
     val cardShape = remember(cardCornerRadius) { RoundedCornerShape(cardCornerRadius) }
     val context = LocalContext.current
     val density = LocalDensity.current
-    val expandedCardWidth = cardHeight * (16f / 9f)
+    val expandedCardWidth = cardHeight * ((16f / 9f) * MODERN_EXPANDED_CARD_WIDTH_MULTIPLIER)
     val targetCardWidth = if (focusedPosterBackdropExpandEnabled && isBackdropExpanded) {
         expandedCardWidth
     } else {

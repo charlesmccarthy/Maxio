@@ -174,6 +174,7 @@ class PlayerRuntimeController(
 
     internal var progressJob: Job? = null
     internal var hideControlsJob: Job? = null
+    internal var controlsAutoHidePaused: Boolean = false
     internal var hideSeekOverlayJob: Job? = null
     internal var watchProgressSaveJob: Job? = null
     internal var seekProgressSyncJob: Job? = null

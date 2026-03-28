@@ -71,6 +71,7 @@ class SearchViewModel @Inject constructor(
     private var discoverJob: Job? = null
     private var catalogRowsUpdateJob: Job? = null
     private var suggestionJob: Job? = null
+    private var liveSearchJob: Job? = null
     private var hasRenderedFirstCatalog = false
     private var pendingCatalogResponses = 0
     private var revealBatchAfterNextDiscoverFetch = false
@@ -80,6 +81,7 @@ class SearchViewModel @Inject constructor(
         const val DISCOVER_INITIAL_LIMIT = 100
         const val DISCOVER_SHOW_MORE_BATCH = 50
         const val SUGGESTION_DEBOUNCE_MS = 150L
+        const val LIVE_SEARCH_DEBOUNCE_MS = 280L
         const val MAX_SUGGESTIONS = 8
     }
 
@@ -271,6 +273,36 @@ class SearchViewModel @Inject constructor(
         activeSearchJobs = emptyList()
 
         fetchSuggestions(query.trim())
+        scheduleLiveSearch(query.trim())
+    }
+
+    private fun scheduleLiveSearch(query: String) {
+        liveSearchJob?.cancel()
+
+        if (query.length < 2) {
+            liveSearchJob = viewModelScope.launch {
+                kotlinx.coroutines.delay(80L)
+                if (_uiState.value.query.trim() != query) return@launch
+                _uiState.update {
+                    it.copy(
+                        isSearching = false,
+                        error = null,
+                        catalogRows = emptyList()
+                    )
+                }
+            }
+            return
+        }
+
+        if (query == _uiState.value.submittedQuery.trim()) {
+            return
+        }
+
+        liveSearchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(LIVE_SEARCH_DEBOUNCE_MS)
+            if (_uiState.value.query.trim() != query) return@launch
+            performSearch(_uiState.value.query)
+        }
     }
 
     private fun fetchSuggestions(query: String) {
@@ -349,11 +381,20 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun submitSearch() {
+        liveSearchJob?.cancel()
+        val query = _uiState.value.query.trim()
+        if (query == _uiState.value.submittedQuery.trim() &&
+            (_uiState.value.catalogRows.isNotEmpty() || _uiState.value.error != null || query.length < 2)
+        ) {
+            _uiState.update { it.copy(suggestions = emptyList()) }
+            return
+        }
         performSearch(_uiState.value.query)
     }
 
     private fun performSearch(rawQuery: String) {
         val query = rawQuery.trim()
+        liveSearchJob?.cancel()
         suggestionJob?.cancel()
         _uiState.update {
             it.copy(

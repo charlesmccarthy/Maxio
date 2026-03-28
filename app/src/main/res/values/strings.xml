@@ -1123,4 +1123,7 @@
     <string name="update_ignore">Ignore</string>
     <string name="watchlist_added">Added to watchlist</string>
     <string name="watchlist_removed">Removed from watchlist</string>
+    <string name="media_like">Like</string>
+    <string name="media_unlike">Unlike</string>
+    <string name="media_liked">Liked</string>
 </resources>

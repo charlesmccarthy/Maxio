@@ -95,6 +95,10 @@ class PlayerViewModel @Inject constructor(
         controller.hideControls()
     }
 
+    fun setControlsAutoHidePaused(paused: Boolean) {
+        controller.setControlsAutoHidePaused(paused)
+    }
+
     fun attachHostActivity(activity: android.app.Activity?) {
         controller.attachHostActivity(activity)
     }

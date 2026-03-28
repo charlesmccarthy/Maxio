@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.BuildConfig
 import androidx.compose.runtime.mutableStateMapOf
 import com.nuvio.tv.core.tmdb.TmdbService
+import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.local.LikedMediaDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.local.TraktAuthDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
@@ -19,6 +21,7 @@ import com.nuvio.tv.data.repository.TraktAuthService
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PosterShape
+import com.nuvio.tv.core.util.isUnreleased
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,9 +31,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import kotlin.random.Random
 import javax.inject.Inject
 
 private const val TAG = "DiscoveryViewModel"
@@ -53,9 +59,11 @@ class DiscoveryViewModel @Inject constructor(
     private val traktAuthService: TraktAuthService,
     private val traktAuthDataStore: TraktAuthDataStore,
     private val tmdbService: TmdbService,
+    private val tmdbMetadataService: TmdbMetadataService,
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val trailerService: TrailerService,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val likedMediaDataStore: LikedMediaDataStore,
     private val activeTrailerState: ActiveTrailerState
 ) : ViewModel() {
 
@@ -64,6 +72,11 @@ class DiscoveryViewModel @Inject constructor(
 
     private var loadJob: Job? = null
     private var surpriseMeJob: Job? = null
+    private var likedRowJob: Job? = null
+    private var curatedRows: List<DiscoveryRow> = emptyList()
+    private var likedItems: List<MetaPreview> = emptyList()
+    private var likedRecommendationRow: DiscoveryRow? = null
+    val likedItemStatus = mutableStateMapOf<String, Boolean>()
 
     // Trailer preview support
     val trailerPreviewUrls = mutableStateMapOf<String, String>()
@@ -97,6 +110,7 @@ class DiscoveryViewModel @Inject constructor(
     init {
         loadContent()
         observeTrailerPrefs()
+        observeLikedItems()
     }
 
     private fun observeTrailerPrefs() {
@@ -109,6 +123,19 @@ class DiscoveryViewModel @Inject constructor(
                     trailerEnabled = enabled
                     trailerMuted = muted
                 }
+        }
+    }
+
+    private fun observeLikedItems() {
+        viewModelScope.launch {
+            likedMediaDataStore.likedItems.collectLatest { items ->
+                likedItems = items
+                likedItemStatus.clear()
+                items.forEach { item ->
+                    likedItemStatus[likedStatusKey(item)] = true
+                }
+                refreshLikedRecommendationRow()
+            }
         }
     }
 
@@ -175,10 +202,17 @@ class DiscoveryViewModel @Inject constructor(
         }
     }
 
+    fun toggleLiked(item: MetaPreview) {
+        viewModelScope.launch {
+            likedMediaDataStore.toggle(item)
+        }
+    }
+
     fun onEvent(event: DiscoveryEvent) {
         when (event) {
             is DiscoveryEvent.OnContentTypeChanged -> {
                 _uiState.update { it.copy(contentType = event.contentType) }
+                refreshLikedRecommendationRow()
                 loadContent()
             }
             DiscoveryEvent.OnSurpriseMeNext -> loadSurpriseMe()
@@ -282,23 +316,135 @@ class DiscoveryViewModel @Inject constructor(
 
                     // Shuffle the content rows (not the section order of curated vs decade)
                     val shuffledRows = rows.shuffled()
-
-                    _uiState.update {
-                        it.copy(
-                            rows = shuffledRows,
-                            genres = genres,
-                            isLoading = false,
-                            error = null
-                        )
-                    }
+                    val heroItems = trending.take(10)
+                    curatedRows = shuffledRows
+                    _uiState.update { it.copy(heroItems = heroItems) }
+                    publishRows(
+                        genres = genres,
+                        isLoading = false,
+                        error = null
+                    )
                 }
 
                 // Load Surprise Me separately
                 loadSurpriseMe()
+                refreshLikedRecommendationRow()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load discovery content", e)
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Failed to load content") }
+                curatedRows = emptyList()
+                _uiState.update { it.copy(heroItems = emptyList()) }
+                publishRows(
+                    genres = _uiState.value.genres,
+                    isLoading = false,
+                    error = e.message ?: "Failed to load content"
+                )
             }
+        }
+    }
+
+    private fun publishRows(
+        genres: List<TmdbGenre>,
+        isLoading: Boolean,
+        error: String?
+    ) {
+        val combinedRows = if (likedRecommendationRow == null) {
+            curatedRows
+        } else {
+            buildList {
+                if (curatedRows.isEmpty()) {
+                    add(likedRecommendationRow!!)
+                } else {
+                    add(curatedRows.first())
+                    add(likedRecommendationRow!!)
+                    addAll(curatedRows.drop(1))
+                }
+            }
+        }
+        _uiState.update {
+            it.copy(
+                rows = combinedRows,
+                genres = genres,
+                isLoading = isLoading,
+                error = error
+            )
+        }
+    }
+
+    private fun refreshLikedRecommendationRow() {
+        likedRowJob?.cancel()
+        likedRowJob = viewModelScope.launch(Dispatchers.IO) {
+            val contentType = when (_uiState.value.contentType) {
+                "movie" -> ContentType.MOVIE
+                else -> ContentType.SERIES
+            }
+            val settings = tmdbSettingsDataStore.settings.first()
+            if (!settings.enabled || !settings.useMoreLikeThis) {
+                likedRecommendationRow = null
+                publishRows(
+                    genres = _uiState.value.genres,
+                    isLoading = _uiState.value.isLoading,
+                    error = _uiState.value.error
+                )
+                return@launch
+            }
+
+            val sourceItems = likedItems.filter { likedContentType(it) == contentType }
+            if (sourceItems.isEmpty()) {
+                likedRecommendationRow = null
+                publishRows(
+                    genres = _uiState.value.genres,
+                    isLoading = _uiState.value.isLoading,
+                    error = _uiState.value.error
+                )
+                return@launch
+            }
+
+            val seedItems = sourceItems
+                .shuffled(Random(sourceItems.joinToString("|") { it.id }.hashCode()))
+                .take(5)
+            val sourceKeys = sourceItems.map(::likedStatusKey).toHashSet()
+            val recommendations = linkedMapOf<String, MetaPreview>()
+            val today = LocalDate.now()
+
+            seedItems.forEach { item ->
+                val tmdbId = runCatching { tmdbService.ensureTmdbId(item.id, item.apiType) }.getOrNull()
+                    ?: return@forEach
+                val moreLikeThis = runCatching {
+                    tmdbMetadataService.fetchMoreLikeThis(
+                        tmdbId = tmdbId,
+                        contentType = contentType,
+                        language = settings.language,
+                        maxItems = 12
+                    )
+                }.getOrDefault(emptyList())
+                moreLikeThis.forEach { recommendation ->
+                    val key = likedStatusKey(recommendation)
+                    if (key in sourceKeys) return@forEach
+                    if (recommendation.isUnreleased(today)) {
+                        return@forEach
+                    }
+                    recommendations.putIfAbsent(key, recommendation)
+                }
+            }
+
+            likedRecommendationRow = recommendations.values
+                .take(25)
+                .takeIf { it.isNotEmpty() }
+                ?.let { items ->
+                    DiscoveryRow(
+                        title = if (contentType == ContentType.MOVIE) {
+                            "More Like Your Liked Movies"
+                        } else {
+                            "More Like Your Liked Shows"
+                        },
+                        items = items
+                    )
+                }
+            publishRows(
+                genres = _uiState.value.genres,
+                isLoading = _uiState.value.isLoading,
+                error = _uiState.value.error
+            )
         }
     }
 
@@ -328,11 +474,15 @@ class DiscoveryViewModel @Inject constructor(
                     )
                 }
                 val results = response.body()?.results.orEmpty()
-                val pick = results.randomOrNull()
+                val picks = results
+                    .shuffled()
+                    .take(8)
+                val pick = picks.firstOrNull()
                 if (pick != null) {
                     val mediaType = _uiState.value.contentType
                     _uiState.update {
                         it.copy(
+                            heroItems = picks.map { result -> result.toMetaPreview(mediaType) },
                             surpriseMe = SurpriseMeState(
                                 item = pick.toMetaPreview(mediaType),
                                 backdropUrl = pick.backdropPath?.let { p -> "https://image.tmdb.org/t/p/w1280$p" },
@@ -345,11 +495,11 @@ class DiscoveryViewModel @Inject constructor(
                         )
                     }
                 } else {
-                    _uiState.update { it.copy(surpriseMe = SurpriseMeState(isLoading = false)) }
+                    _uiState.update { it.copy(heroItems = emptyList(), surpriseMe = SurpriseMeState(isLoading = false)) }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Surprise Me failed", e)
-                _uiState.update { it.copy(surpriseMe = SurpriseMeState(isLoading = false)) }
+                _uiState.update { it.copy(heroItems = emptyList(), surpriseMe = SurpriseMeState(isLoading = false)) }
             }
         }
     }
@@ -615,4 +765,14 @@ private fun TmdbDiscoverResult.toMetaPreview(mediaType: String): MetaPreview {
         imdbRating = voteAverage?.toFloat(),
         genres = emptyList()
     )
+}
+
+private fun likedStatusKey(item: MetaPreview): String = "${item.apiType}:${item.id}"
+
+private fun likedContentType(item: MetaPreview): ContentType {
+    return when (item.apiType.lowercase()) {
+        "movie" -> ContentType.MOVIE
+        "series", "tv" -> ContentType.SERIES
+        else -> ContentType.UNKNOWN
+    }
 }

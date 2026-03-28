@@ -19,19 +19,23 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,10 +48,13 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nuvio.tv.R
 import com.nuvio.tv.data.remote.api.TmdbGenre
 import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.ui.components.HeroCarousel
 import com.nuvio.tv.ui.components.NetflixStyleRow
 import com.nuvio.tv.ui.theme.NuvioColors
+import kotlinx.coroutines.android.awaitFrame
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -57,8 +64,25 @@ fun DiscoveryScreen(
     viewModel: DiscoveryViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val heroFocusRequester = remember { FocusRequester() }
+    var requestedInitialHeroFocus by rememberSaveable { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    LaunchedEffect(state.heroItems, requestedInitialHeroFocus) {
+        if (requestedInitialHeroFocus || state.heroItems.isEmpty()) return@LaunchedEffect
+        repeat(2) { awaitFrame() }
+        runCatching { heroFocusRequester.requestFocus() }
+        requestedInitialHeroFocus = true
+    }
+
+    LaunchedEffect(state.contentType) {
+        requestedInitialHeroFocus = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
         // Content type toggle
         Row(
             modifier = Modifier
@@ -110,15 +134,25 @@ fun DiscoveryScreen(
                 contentPadding = PaddingValues(bottom = 48.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // Surprise Me card
-                item(key = "surprise_me") {
-                    SurpriseMeCard(
-                        state = state.surpriseMe,
-                        contentType = state.contentType,
-                        onNext = { viewModel.onEvent(DiscoveryEvent.OnSurpriseMeNext) },
-                        onPlay = { viewModel.onEvent(DiscoveryEvent.OnSurpriseMePlay(onNavigateToDetail)) },
-                        onDetails = { viewModel.onEvent(DiscoveryEvent.OnSurpriseMeDetails(onNavigateToDetail)) }
-                    )
+                item(key = "discovery_hero") {
+                    if (state.heroItems.isNotEmpty()) {
+                        HeroCarousel(
+                            items = state.heroItems,
+                            onItemClick = { item ->
+                                viewModel.storeActiveTrailer(item)
+                                viewModel.onEvent(DiscoveryEvent.OnItemClick(item, onNavigateToDetail))
+                            },
+                            trailerPreviewUrls = viewModel.trailerPreviewUrls,
+                            trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                            logoOverrides = viewModel.logoUrls,
+                            trailerEnabled = viewModel.trailerEnabled,
+                            trailerMuted = viewModel.trailerMuted,
+                            onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
+                            onItemFocus = { item -> viewModel.requestLogo(item) },
+                            focusRequester = heroFocusRequester,
+                            modifier = Modifier.padding(horizontal = 48.dp)
+                        )
+                    }
                 }
 
                 // Content rows
@@ -130,6 +164,8 @@ fun DiscoveryScreen(
                             viewModel.storeActiveTrailer(item)
                             viewModel.onEvent(DiscoveryEvent.OnItemClick(item, onNavigateToDetail))
                         },
+                        onItemLongPress = { item -> viewModel.toggleLiked(item) },
+                        isItemLiked = { item -> viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true },
                         trailerPreviewUrls = viewModel.trailerPreviewUrls,
                         trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
                         logoOverrides = viewModel.logoUrls,
@@ -188,128 +224,6 @@ fun DiscoveryScreen(
                             )
                         }
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SurpriseMeCard(
-    state: SurpriseMeState,
-    contentType: String,
-    onNext: () -> Unit,
-    onPlay: () -> Unit,
-    onDetails: () -> Unit
-) {
-    val item = state.item
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 48.dp)
-            .height(260.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(NuvioColors.BackgroundCard)
-    ) {
-        Crossfade(targetState = state.backdropUrl, animationSpec = tween(400), label = "surpriseCrossfade") { backdropUrl ->
-            if (backdropUrl != null) {
-                val context = LocalContext.current
-                val imageModel = remember(backdropUrl) {
-                    ImageRequest.Builder(context)
-                        .data(backdropUrl)
-                        .crossfade(300)
-                        .build()
-                }
-                AsyncImage(
-                    model = imageModel,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-        }
-
-        // Gradient overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        0.0f to Color.Black.copy(alpha = 0.85f),
-                        0.5f to Color.Black.copy(alpha = 0.6f),
-                        1.0f to Color.Transparent
-                    )
-                )
-        )
-
-        // Content
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "Surprise Me",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = NuvioColors.Primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                if (item != null) {
-                    Text(
-                        text = item.name,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        state.year?.let {
-                            Text(text = it, style = MaterialTheme.typography.bodyMedium, color = NuvioColors.TextSecondary)
-                        }
-                        state.rating?.let {
-                            Text(text = "★ $it", style = MaterialTheme.typography.bodyMedium, color = NuvioColors.TextSecondary)
-                        }
-                    }
-                    state.description?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = NuvioColors.TextSecondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
-                    }
-                } else if (state.isLoading) {
-                    Text(
-                        text = "Finding something great...",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = NuvioColors.TextSecondary
-                    )
-                }
-            }
-
-            if (item != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = onPlay,
-                        colors = ButtonDefaults.colors(containerColor = NuvioColors.Primary)
-                    ) { Text("Play") }
-                    Button(
-                        onClick = onNext,
-                        colors = ButtonDefaults.colors(containerColor = Color.White.copy(alpha = 0.15f))
-                    ) { Text("Next") }
-                    Button(
-                        onClick = onDetails,
-                        colors = ButtonDefaults.colors(containerColor = Color.White.copy(alpha = 0.15f))
-                    ) { Text("Details") }
                 }
             }
         }

@@ -382,6 +382,7 @@ fun MetaDetailsScreen(
                     episodeWatchedPendingKeys = uiState.episodeWatchedPendingKeys,
                     blurUnwatchedEpisodes = uiState.blurUnwatchedEpisodes,
                     showFullReleaseDate = uiState.showFullReleaseDate,
+                    isLiked = uiState.isLiked,
                     isMovieWatched = uiState.isMovieWatched,
                     isMovieWatchedPending = uiState.isMovieWatchedPending,
                     moreLikeThis = uiState.moreLikeThis,
@@ -470,6 +471,7 @@ fun MetaDetailsScreen(
                     onPlayButtonFocused = { viewModel.onEvent(MetaDetailsEvent.OnPlayButtonFocused) },
                     onToggleLibrary = { viewModel.onEvent(MetaDetailsEvent.OnToggleLibrary) },
                     onLibraryLongPress = { viewModel.onEvent(MetaDetailsEvent.OnLibraryLongPress) },
+                    onToggleLiked = { viewModel.onEvent(MetaDetailsEvent.OnToggleLiked) },
                     onToggleMovieWatched = { viewModel.onEvent(MetaDetailsEvent.OnToggleMovieWatched) },
                     onToggleEpisodeWatched = { video ->
                         viewModel.onEvent(MetaDetailsEvent.OnToggleEpisodeWatched(video))
@@ -630,6 +632,7 @@ private fun MetaDetailsContent(
     episodeWatchedPendingKeys: Set<String>,
     blurUnwatchedEpisodes: Boolean,
     showFullReleaseDate: Boolean,
+    isLiked: Boolean,
     isMovieWatched: Boolean,
     isMovieWatchedPending: Boolean,
     moreLikeThis: List<MetaPreview>,
@@ -654,6 +657,7 @@ private fun MetaDetailsContent(
     onPlayButtonFocused: () -> Unit,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
+    onToggleLiked: () -> Unit,
     onToggleMovieWatched: () -> Unit,
     onToggleEpisodeWatched: (Video) -> Unit,
     onMarkSeasonWatched: (Int) -> Unit,
@@ -1241,6 +1245,8 @@ private fun MetaDetailsContent(
                                 onLibraryLongPress()
                             }
                         },
+                        isLiked = isLiked,
+                        onToggleLiked = onToggleLiked,
                         isMovieWatched = isMovieWatched,
                         isMovieWatchedPending = isMovieWatchedPending,
                         onToggleMovieWatched = onToggleMovieWatched,

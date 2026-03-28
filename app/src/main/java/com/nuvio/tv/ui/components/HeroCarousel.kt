@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.components
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,6 +58,8 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import kotlinx.coroutines.delay
 
 private const val AUTO_ADVANCE_INTERVAL_MS = 10000L
+private const val HERO_TRAILER_REQUEST_DEBOUNCE_MS = 150L
+private val HERO_SHAPE = RoundedCornerShape(18.dp)
 private val YEAR_REGEX = Regex("""\b\d{4}\b""")
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -64,6 +67,12 @@ private val YEAR_REGEX = Regex("""\b\d{4}\b""")
 fun HeroCarousel(
     items: List<MetaPreview>,
     onItemClick: (MetaPreview) -> Unit,
+    trailerPreviewUrls: Map<String, String> = emptyMap(),
+    trailerPreviewAudioUrls: Map<String, String> = emptyMap(),
+    logoOverrides: Map<String, String> = emptyMap(),
+    trailerEnabled: Boolean = false,
+    trailerMuted: Boolean = true,
+    onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     onItemFocus: (MetaPreview) -> Unit = {},
     focusRequester: FocusRequester? = null,
     fullWidth: Dp = Dp.Unspecified,
@@ -73,10 +82,29 @@ fun HeroCarousel(
 
     var activeIndex by remember { mutableIntStateOf(0) }
     var isFocused by remember { mutableStateOf(false) }
+    val activeItem = items.getOrNull(activeIndex)
+    val trailerPreviewUrl = activeItem?.id?.let(trailerPreviewUrls::get)
+    val trailerPreviewAudioUrl = activeItem?.id?.let(trailerPreviewAudioUrls::get)
+    var trailerFirstFrameRendered by remember(activeItem, trailerPreviewUrl) { mutableStateOf(false) }
+    var trailerEnded by remember(activeItem, trailerPreviewUrl) { mutableStateOf(false) }
 
-    LaunchedEffect(activeIndex, isFocused) {
+    LaunchedEffect(items.size) {
+        activeIndex = activeIndex.coerceIn(0, items.lastIndex)
+    }
+
+    LaunchedEffect(activeItem, isFocused) {
         if (!isFocused) return@LaunchedEffect
-        items.getOrNull(activeIndex)?.let { onItemFocus(it) }
+        activeItem?.let { onItemFocus(it) }
+    }
+
+    LaunchedEffect(isFocused, activeItem, trailerEnabled) {
+        if (!isFocused || !trailerEnabled) return@LaunchedEffect
+        val item = activeItem ?: return@LaunchedEffect
+        if (trailerPreviewUrls.containsKey(item.id)) return@LaunchedEffect
+        delay(HERO_TRAILER_REQUEST_DEBOUNCE_MS)
+        if (isFocused && activeItem?.id == item.id) {
+            onRequestTrailerPreview(item)
+        }
     }
 
     // Auto-advance when not focused — delay first advance to 20s so initial GPU load settles
@@ -99,22 +127,22 @@ fun HeroCarousel(
                 else
                     Modifier.fillMaxWidth()
             )
-            .height(400.dp)
+            .height(420.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusable()
             .onFocusChanged { isFocused = it.hasFocus || it.isFocused }
+            .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown) {
                     when (event.key) {
                         Key.DirectionLeft -> {
-                            if (activeIndex > 0) {
-                                activeIndex--
+                            if (items.size > 1) {
+                                activeIndex = (activeIndex - 1 + items.size) % items.size
                                 true
                             } else false
                         }
                         Key.DirectionRight -> {
-                            if (activeIndex < items.size - 1) {
-                                activeIndex++
+                            if (items.size > 1) {
+                                activeIndex = (activeIndex + 1) % items.size
                                 true
                             } else false
                         }
@@ -129,15 +157,36 @@ fun HeroCarousel(
                     false
                 }
             }
+            .border(
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) Color.White else Color.White.copy(alpha = 0.14f),
+                shape = HERO_SHAPE
+            )
     ) {
-        // Crossfade between slides
-        Crossfade(
-            targetState = activeIndex,
-            animationSpec = tween(300),
-            label = "heroSlide"
-        ) { index ->
-            val item = items.getOrNull(index) ?: return@Crossfade
-            HeroCarouselSlide(item = item)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(HERO_SHAPE)
+                .background(Color.Black)
+        ) {
+            // Crossfade between slides
+            Crossfade(
+                targetState = activeIndex,
+                animationSpec = tween(300),
+                label = "heroSlide"
+            ) { index ->
+                val item = items.getOrNull(index) ?: return@Crossfade
+                HeroCarouselSlide(
+                    item = item,
+                    trailerPreviewUrl = if (isFocused && trailerEnabled && !trailerEnded) trailerPreviewUrl else null,
+                    trailerPreviewAudioUrl = if (isFocused && trailerEnabled && !trailerEnded) trailerPreviewAudioUrl else null,
+                    logoUrlOverride = logoOverrides[item.id],
+                    trailerMuted = trailerMuted,
+                    trailerFirstFrameRendered = trailerFirstFrameRendered,
+                    onTrailerEnded = { trailerEnded = true },
+                    onTrailerFirstFrameRendered = { trailerFirstFrameRendered = true }
+                )
+            }
         }
 
         // Indicator dots — pre-compute colors + shape to avoid reallocation per dot
@@ -181,7 +230,14 @@ fun HeroCarousel(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun HeroCarouselSlide(
-    item: MetaPreview
+    item: MetaPreview,
+    trailerPreviewUrl: String?,
+    trailerPreviewAudioUrl: String?,
+    logoUrlOverride: String?,
+    trailerMuted: Boolean,
+    trailerFirstFrameRendered: Boolean,
+    onTrailerEnded: () -> Unit,
+    onTrailerFirstFrameRendered: () -> Unit
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -199,8 +255,9 @@ private fun HeroCarouselSlide(
             .size(width = requestWidthPx, height = requestHeightPx)
             .build()
     }
-    val logoModel = remember(context, item.logo, requestWidthPx, logoRequestHeightPx) {
-        item.logo?.let {
+    val effectiveLogoUrl = logoUrlOverride ?: item.logo
+    val logoModel = remember(context, effectiveLogoUrl, requestWidthPx, logoRequestHeightPx) {
+        effectiveLogoUrl?.let {
             ImageRequest.Builder(context)
                 .data(it)
                 .crossfade(false)
@@ -208,8 +265,8 @@ private fun HeroCarouselSlide(
                 .build()
         }
     }
-    var logoLoadFailed by remember(item.logo) { mutableStateOf(false) }
-    val showLogo = !item.logo.isNullOrBlank() && !logoLoadFailed
+    var logoLoadFailed by remember(effectiveLogoUrl) { mutableStateOf(false) }
+    val showLogo = !effectiveLogoUrl.isNullOrBlank() && !logoLoadFailed
 
     val bgColor = NuvioColors.Background
     val bottomGradient = remember(bgColor) {
@@ -244,9 +301,24 @@ private fun HeroCarouselSlide(
             model = backgroundModel,
             contentDescription = item.name,
             modifier = Modifier.fillMaxSize(),
+            alpha = if (!trailerPreviewUrl.isNullOrBlank() && trailerFirstFrameRendered) 0f else 1f,
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopCenter
         )
+
+        if (!trailerPreviewUrl.isNullOrBlank()) {
+            TrailerPlayer(
+                trailerUrl = trailerPreviewUrl,
+                trailerAudioUrl = trailerPreviewAudioUrl,
+                isPlaying = true,
+                muted = trailerMuted,
+                cropToFill = true,
+                overscanZoom = 1.18f,
+                onEnded = onTrailerEnded,
+                onFirstFrameRendered = onTrailerFirstFrameRendered,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Bottom gradient for text readability
         Box(

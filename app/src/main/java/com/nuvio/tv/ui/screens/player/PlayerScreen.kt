@@ -1045,6 +1045,14 @@ private fun PlayerControlsOverlay(
 
     val firstCastItemFocusRequester = remember { FocusRequester() }
     var showCastRow by remember { mutableStateOf(false) }
+    LaunchedEffect(showCastRow) {
+        viewModel.setControlsAutoHidePaused(showCastRow)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.setControlsAutoHidePaused(false)
+        }
+    }
     val handleDownFromControls: () -> Unit = {
         if (uiState.castMembers.isNotEmpty()) {
             showCastRow = true

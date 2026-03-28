@@ -9,6 +9,7 @@ import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.AuthSessionNoticeDataStore
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.local.LikedMediaDataStore
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
 import com.nuvio.tv.data.local.StartupAuthNotice
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
@@ -62,6 +63,7 @@ class HomeViewModel @Inject constructor(
     internal val trailerService: TrailerService,
     internal val watchedItemsPreferences: WatchedItemsPreferences,
     internal val mdbListRepository: MDBListRepository,
+    internal val likedMediaDataStore: LikedMediaDataStore,
     private val activeTrailerState: ActiveTrailerState
 ) : ViewModel() {
     companion object {
@@ -145,6 +147,12 @@ class HomeViewModel @Inject constructor(
     internal val movieWatchedObserverJobs = mutableMapOf<String, Job>()
     internal var movieWatchedBatchJob: Job? = null
     internal var lastMovieWatchedItemKeys: Set<String> = emptySet()
+    internal val likedItemStatusState = mutableStateMapOf<String, Boolean>()
+    val likedItemStatus: Map<String, Boolean>
+        get() = likedItemStatusState
+    internal var likedItems: List<MetaPreview> = emptyList()
+    internal var likedRecommendationRows: List<CatalogRow> = emptyList()
+    internal var likedRecommendationJob: Job? = null
     internal var libraryTabsObserverJob: Job? = null
     internal var activePosterListPickerInput: LibraryEntryInput? = null
     internal var posterStatusObservationEnabled: Boolean = false
@@ -190,6 +198,7 @@ class HomeViewModel @Inject constructor(
         observeStartupAuthNotice()
         loadContinueWatching()
         observeInstalledAddons()
+        observeLikedItems()
         viewModelScope.launch {
             delay(STARTUP_GRACE_PERIOD_MS)
             startupGracePeriodActive = false
@@ -211,6 +220,8 @@ class HomeViewModel @Inject constructor(
     private fun observeLayoutPreferences() = observeLayoutPreferencesPipeline()
 
     private fun observeExternalMetaPrefetchPreference() = observeExternalMetaPrefetchPreferencePipeline()
+
+    private fun observeLikedItems() = observeLikedItemsPipeline()
 
     fun requestTrailerPreview(item: MetaPreview) = requestTrailerPreviewPipeline(item)
 

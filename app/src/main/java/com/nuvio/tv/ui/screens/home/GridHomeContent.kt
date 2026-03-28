@@ -69,6 +69,10 @@ private const val KEY_REPEAT_THROTTLE_MS = 80L
 fun GridHomeContent(
     uiState: HomeUiState,
     gridFocusState: HomeScreenFocusState,
+    trailerPreviewUrls: Map<String, String>,
+    trailerPreviewAudioUrls: Map<String, String>,
+    trailerEnabled: Boolean,
+    trailerMuted: Boolean,
     onNavigateToDetail: (String, String, String) -> Unit,
     onContinueWatchingClick: (ContinueWatchingItem) -> Unit,
     onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = {},
@@ -79,6 +83,7 @@ fun GridHomeContent(
     isCatalogItemWatched: (MetaPreview) -> Boolean = { false },
     onCatalogItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> },
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
+    onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     onItemFocus: (com.nuvio.tv.domain.model.MetaPreview) -> Unit = {},
     onSaveGridFocusState: (Int, Int) -> Unit
 ) {
@@ -210,6 +215,12 @@ fun GridHomeContent(
                             HeroCarousel(
                                 items = gridItem.items,
                                 focusRequester = if (shouldRequestInitialFocus) heroFocusRequester else null,
+                                trailerPreviewUrls = trailerPreviewUrls,
+                                trailerPreviewAudioUrls = trailerPreviewAudioUrls,
+                                trailerEnabled = trailerEnabled,
+                                trailerMuted = trailerMuted,
+                                onRequestTrailerPreview = onRequestTrailerPreview,
+                                onItemFocus = onItemFocus,
                                 onItemClick = { item ->
                                     onNavigateToDetail(
                                         item.id,

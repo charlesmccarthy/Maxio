@@ -10,6 +10,7 @@ import com.nuvio.tv.core.stream.StreamPrefetchCache
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.local.LikedMediaDataStore
 import com.nuvio.tv.data.local.PlayerSettingsDataStore
 import com.nuvio.tv.data.local.TraktAuthDataStore
 import com.nuvio.tv.data.local.TraktSettingsDataStore
@@ -23,7 +24,9 @@ import com.nuvio.tv.domain.model.LibraryEntryInput
 import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.ListMembershipChanges
 import com.nuvio.tv.domain.model.Meta
+import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.NextToWatch
+import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.domain.model.TmdbSettings
 import com.nuvio.tv.domain.model.TraktCommentReview
 import com.nuvio.tv.domain.model.Video
@@ -72,6 +75,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val tmdbMetadataService: TmdbMetadataService,
     private val imdbEpisodeRatingsRepository: ImdbEpisodeRatingsRepository,
     private val mdbListRepository: MDBListRepository,
+    private val likedMediaDataStore: LikedMediaDataStore,
     private val libraryRepository: LibraryRepository,
     private val watchProgressRepository: WatchProgressRepository,
     private val watchedItemsPreferences: WatchedItemsPreferences,
@@ -122,6 +126,7 @@ class MetaDetailsViewModel @Inject constructor(
         observeMetaViewSettings()
         observeTrailerAutoplaySettings()
         observeTraktCommentsAvailability()
+        observeLikedState()
         observeLibraryState()
         observeWatchProgress()
         observeWatchedEpisodes()
@@ -273,6 +278,7 @@ class MetaDetailsViewModel @Inject constructor(
             is MetaDetailsEvent.OnEpisodeClick -> { /* Navigate to stream */ }
             MetaDetailsEvent.OnPlayClick -> { /* Start playback */ }
             MetaDetailsEvent.OnToggleLibrary -> toggleLibrary()
+            MetaDetailsEvent.OnToggleLiked -> toggleLiked()
             MetaDetailsEvent.OnRetry -> loadMeta()
             MetaDetailsEvent.OnRetryComments -> _uiState.value.meta?.let { loadComments(it, forceRefresh = true) }
             is MetaDetailsEvent.OnCommentSelected -> openCommentOverlay(event.review)
@@ -353,6 +359,36 @@ class MetaDetailsViewModel @Inject constructor(
                 .collectLatest { inWatchlist ->
                     _uiState.update { state ->
                         if (state.isInWatchlist == inWatchlist) state else state.copy(isInWatchlist = inWatchlist)
+                    }
+                }
+        }
+    }
+
+    private fun observeLikedState() {
+        viewModelScope.launch {
+            likedMediaDataStore.likedItems
+                .collectLatest { items ->
+                    val isLiked = items.any { liked ->
+                        liked.id == itemId && liked.apiType.equals(itemType, ignoreCase = true)
+                    }
+                    _uiState.update { state ->
+                        if (state.isLiked == isLiked) state else state.copy(isLiked = isLiked)
+                    }
+                }
+        }
+    }
+
+    private fun toggleLiked() {
+        val meta = _uiState.value.meta ?: return
+        viewModelScope.launch {
+            runCatching { likedMediaDataStore.toggle(meta.toMetaPreview()) }
+                .onFailure { error ->
+                    Log.w(TAG, "Failed to toggle liked state for ${meta.id}", error)
+                    _uiState.update {
+                        it.copy(
+                            userMessage = error.message ?: context.getString(R.string.error_generic),
+                            userMessageIsError = true
+                        )
                     }
                 }
         }
@@ -1841,4 +1877,37 @@ class MetaDetailsViewModel @Inject constructor(
         trailerFetchJob?.cancel()
         nextToWatchJob?.cancel()
     }
+}
+
+private fun Meta.toMetaPreview(): MetaPreview {
+    return MetaPreview(
+        id = id,
+        type = type,
+        rawType = rawType,
+        name = name,
+        poster = poster,
+        posterShape = posterShape,
+        background = background,
+        logo = logo,
+        description = description,
+        releaseInfo = releaseInfo,
+        imdbRating = imdbRating,
+        genres = genres,
+        runtime = runtime,
+        status = status,
+        ageRating = ageRating,
+        language = language,
+        released = released,
+        country = country,
+        imdbId = imdbId,
+        slug = slug,
+        landscapePoster = landscapePoster,
+        rawPosterUrl = rawPosterUrl,
+        director = director,
+        writer = writer,
+        links = links,
+        behaviorHints = behaviorHints,
+        trailers = trailers,
+        trailerYtIds = trailerYtIds
+    )
 }

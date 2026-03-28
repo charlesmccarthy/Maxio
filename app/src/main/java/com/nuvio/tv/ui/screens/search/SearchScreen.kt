@@ -11,6 +11,7 @@ import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -57,6 +59,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -103,6 +106,7 @@ fun SearchScreen(
     val voiceFocusRequester = remember { FocusRequester() }
     val searchFocusRequester = remember { FocusRequester() }
     val discoverFirstItemFocusRequester = remember { FocusRequester() }
+    val searchResultsFirstRowFocusRequester = remember { FocusRequester() }
     var isSearchFieldAttached by remember { mutableStateOf(false) }
     var focusResults by remember { mutableStateOf(false) }
     var pendingFocusMoveToResultsQuery by remember { mutableStateOf<String?>(null) }
@@ -114,6 +118,9 @@ fun SearchScreen(
     var pendingDiscoverRestoreOnResume by rememberSaveable { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    var previousImeVisible by remember { mutableStateOf(false) }
     val onVoiceQueryResultState = rememberUpdatedState<(String) -> Unit> { recognized ->
         if (recognized.isNotBlank()) {
             viewModel.onEvent(SearchEvent.QueryChanged(recognized))
@@ -300,6 +307,17 @@ fun SearchScreen(
         }
     }
 
+    LaunchedEffect(focusResults, isDiscoverMode, canMoveToResults) {
+        if (focusResults && !isDiscoverMode && canMoveToResults) {
+            delay(100)
+            runCatching { searchResultsFirstRowFocusRequester.requestFocus() }
+            focusResults = false
+            pendingFocusMoveToResultsQuery = null
+            pendingFocusMoveSawSearching = false
+            pendingFocusMoveHadExistingSearchRows = false
+        }
+    }
+
     LaunchedEffect(
         pendingFocusMoveToResultsQuery,
         pendingFocusMoveSawSearching,
@@ -338,6 +356,13 @@ fun SearchScreen(
     LaunchedEffect(Unit) {
         repeat(2) { withFrameNanos { } }
         runCatching { topInputFocusRequester.requestFocus() }
+    }
+
+    LaunchedEffect(imeVisible, canMoveToResults, isDiscoverMode) {
+        if (previousImeVisible && !imeVisible && canMoveToResults && !isDiscoverMode) {
+            focusResults = true
+        }
+        previousImeVisible = imeVisible
     }
 
     // Push search suggestions to the native keyboard suggestion bar
@@ -382,76 +407,53 @@ fun SearchScreen(
         }
     }
 
-    Box(
+    Column(
         modifier = Modifier
-            .fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+            .fillMaxSize()
+            .padding(top = 10.dp)
     ) {
+        SearchInputField(
+            query = uiState.query,
+            canMoveToResults = canMoveToResults,
+            voiceFocusRequester = if (isVoiceSearchAvailable) voiceFocusRequester else null,
+            searchFocusRequester = searchFocusRequester,
+            onAttached = { isSearchFieldAttached = true },
+            onQueryChanged = handleQueryChanged,
+            onSubmit = {
+                submitCurrentQuery(uiState.query.trim())
+            },
+            showVoiceSearch = isVoiceSearchAvailable,
+            onVoiceSearch = launchVoiceSearch,
+            onMoveToResults = {
+                focusResults = true
+            },
+            onOpenDiscover = onOpenDiscover,
+            keyboardController = keyboardController
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         if (isDiscoverMode) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 10.dp)
+                    .weight(1f),
+                contentAlignment = Alignment.Center
             ) {
-                SearchInputField(
-                    query = uiState.query,
-                    canMoveToResults = canMoveToResults,
-                    voiceFocusRequester = if (isVoiceSearchAvailable) voiceFocusRequester else null,
-                    searchFocusRequester = searchFocusRequester,
-                    onAttached = { isSearchFieldAttached = true },
-                    onQueryChanged = handleQueryChanged,
-                    onSubmit = {
-                        submitCurrentQuery(uiState.query.trim())
-                    },
-                    showVoiceSearch = isVoiceSearchAvailable,
-                    onVoiceSearch = launchVoiceSearch,
-                    onMoveToResults = { focusResults = true },
-                    onOpenDiscover = onOpenDiscover,
-                    keyboardController = keyboardController
+                EmptyScreenState(
+                    title = stringResource(R.string.search_start_title),
+                    subtitle = stringResource(R.string.search_start_subtitle),
+                    icon = Icons.Default.Search
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    EmptyScreenState(
-                        title = stringResource(R.string.search_start_title),
-                        subtitle = stringResource(R.string.search_start_subtitle),
-                        icon = Icons.Default.Search
-                    )
-                }
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                contentPadding = PaddingValues(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item {
-                    SearchInputField(
-                        query = uiState.query,
-                        canMoveToResults = canMoveToResults,
-                        voiceFocusRequester = if (isVoiceSearchAvailable) voiceFocusRequester else null,
-                        searchFocusRequester = searchFocusRequester,
-                        onAttached = { isSearchFieldAttached = true },
-                        onQueryChanged = handleQueryChanged,
-                        onSubmit = {
-                            submitCurrentQuery(uiState.query.trim())
-                        },
-                        showVoiceSearch = isVoiceSearchAvailable,
-                        onVoiceSearch = launchVoiceSearch,
-                        onMoveToResults = {
-                            focusResults = true
-                        },
-                        onOpenDiscover = onOpenDiscover,
-                        keyboardController = keyboardController
-                    )
-                }
-
                 if (trimmedSubmittedQuery.length < 2 || hasPendingUnsubmittedQuery) {
                     item {
                         Text(
@@ -531,6 +533,7 @@ fun SearchScreen(
                             NetflixStyleRow(
                                 title = rowTitle,
                                 items = catalogRow.items,
+                                focusRequester = if (index == 0) searchResultsFirstRowFocusRequester else null,
                                 onItemClick = { item ->
                                     viewModel.storeActiveTrailer(item)
                                     onNavigateToDetail(item.id, catalogRow.apiType, catalogRow.addonBaseUrl)
@@ -653,6 +656,9 @@ private fun SearchInputField(
                         KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                             if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                                 onSubmit()
+                                if (canMoveToResults) {
+                                    onMoveToResults()
+                                }
                             }
                             return@onPreviewKeyEvent true
                         }
@@ -673,6 +679,9 @@ private fun SearchInputField(
                 onDone = {
                     onSubmit()
                     keyboardController?.hide()
+                    if (canMoveToResults) {
+                        onMoveToResults()
+                    }
                 }
             ),
             singleLine = true,

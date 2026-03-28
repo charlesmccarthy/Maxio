@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +69,8 @@ private const val KEY_REPEAT_THROTTLE_MS = 200L
 private const val ITEM_FOCUS_DEBOUNCE_MS = 130L
 private const val TRAILER_REQUEST_DEBOUNCE_MS = 50L
 private const val SLIDE_ANIM_MS = 180
+private const val EXPANDED_CARD_WIDTH_DP = 430
+private const val EXPANDED_CARD_HEIGHT_MULTIPLIER = 1.24f
 private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
 
 /**
@@ -84,6 +87,7 @@ fun NetflixStyleRow(
     onItemClick: (MetaPreview) -> Unit,
     onItemLongPress: ((MetaPreview) -> Unit)? = null,
     isItemWatched: (MetaPreview) -> Boolean = { false },
+    isItemLiked: (MetaPreview) -> Boolean = { false },
     posterCardStyle: PosterCardStyle = PosterCardDefaults.Style,
     trailerPreviewUrls: Map<String, String> = emptyMap(),
     trailerPreviewAudioUrls: Map<String, String> = emptyMap(),
@@ -104,8 +108,8 @@ fun NetflixStyleRow(
 ) {
     if (items.isEmpty()) return
 
-    val expandedCardHeight = posterCardStyle.height * 1.15f
-    val expandedCardWidth = 390.dp
+    val expandedCardHeight = posterCardStyle.height * EXPANDED_CARD_HEIGHT_MULTIPLIER
+    val expandedCardWidth = EXPANDED_CARD_WIDTH_DP.dp
     val posterWidth = posterCardStyle.width
     val posterHeight = posterCardStyle.height * 1.15f
     val cardShape = remember(posterCardStyle.cornerRadius) { RoundedCornerShape(posterCardStyle.cornerRadius) }
@@ -291,6 +295,7 @@ fun NetflixStyleRow(
                 height = expandedCardHeight,
                 shape = cardShape,
                 isFocused = isFocused,
+                isLiked = isItemLiked(items[selectedIndex]),
                 trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
                 trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
                 trailerMuted = trailerMuted,
@@ -371,6 +376,7 @@ private fun ExpandedCarouselCard(
     height: Dp,
     shape: RoundedCornerShape,
     isFocused: Boolean,
+    isLiked: Boolean,
     trailerPreviewUrl: String?,
     trailerPreviewAudioUrl: String?,
     trailerMuted: Boolean,
@@ -509,6 +515,33 @@ private fun ExpandedCarouselCard(
                     requestWidthPx = requestWidthPx,
                     logoOverrides = logoOverrides
                 )
+            }
+
+            if (isLiked) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color.Black.copy(alpha = 0.62f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ThumbUp,
+                            contentDescription = stringResource(R.string.media_liked),
+                            tint = Color.White
+                        )
+                        Text(
+                            text = stringResource(R.string.media_liked),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
+                        )
+                    }
+                }
             }
         }
     }

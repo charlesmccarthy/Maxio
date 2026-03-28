@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListPrefetchStrategy
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -51,6 +52,8 @@ fun ClassicHomeContent(
     focusState: HomeScreenFocusState,
     trailerPreviewUrls: Map<String, String>,
     trailerPreviewAudioUrls: Map<String, String>,
+    trailerEnabled: Boolean,
+    trailerMuted: Boolean,
     onNavigateToDetail: (String, String, String) -> Unit,
     onContinueWatchingClick: (ContinueWatchingItem) -> Unit,
     onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = {},
@@ -59,6 +62,7 @@ fun ClassicHomeContent(
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit,
     onRemoveContinueWatching: (String, Int?, Int?, Boolean) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean = { false },
+    isCatalogItemLiked: (MetaPreview) -> Boolean = { false },
     onCatalogItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> },
     onRequestTrailerPreview: (MetaPreview) -> Unit,
     onItemFocus: (MetaPreview) -> Unit = {},
@@ -176,6 +180,11 @@ fun ClassicHomeContent(
                 HeroCarousel(
                     items = uiState.heroItems,
                     focusRequester = if (shouldRequestInitialFocus) heroFocusRequester else null,
+                    trailerPreviewUrls = trailerPreviewUrls,
+                    trailerPreviewAudioUrls = trailerPreviewAudioUrls,
+                    trailerEnabled = trailerEnabled,
+                    trailerMuted = trailerMuted,
+                    onRequestTrailerPreview = onRequestTrailerPreview,
                     onItemFocus = onItemFocus,
                     onItemClick = { item ->
                         onNavigateToDetail(
@@ -183,7 +192,8 @@ fun ClassicHomeContent(
                             item.apiType,
                             ""
                         )
-                    }
+                    },
+                    modifier = Modifier.padding(horizontal = 48.dp)
                 )
             }
         }
@@ -301,6 +311,7 @@ fun ClassicHomeContent(
                     onCatalogItemLongPress(item, catalogRow.addonBaseUrl)
                 },
                 isItemWatched = isCatalogItemWatched,
+                isItemLiked = isCatalogItemLiked,
                 posterCardStyle = posterCardStyle,
                 trailerPreviewUrls = trailerPreviewUrls,
                 trailerPreviewAudioUrls = trailerPreviewAudioUrls,
