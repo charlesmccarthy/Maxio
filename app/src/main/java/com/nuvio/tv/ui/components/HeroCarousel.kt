@@ -84,9 +84,9 @@ fun HeroCarousel(
 
     var activeIndex by remember { mutableIntStateOf(0) }
     var isFocused by remember { mutableStateOf(false) }
-    val activeItem = items.getOrNull(activeIndex)
-    val trailerPreviewUrl = activeItem?.id?.let(trailerPreviewUrls::get)
-    val trailerPreviewAudioUrl = activeItem?.id?.let(trailerPreviewAudioUrls::get)
+    val activeItem = items[activeIndex]
+    val trailerPreviewUrl = trailerPreviewUrls[activeItem.id]
+    val trailerPreviewAudioUrl = trailerPreviewAudioUrls[activeItem.id]
     var trailerFirstFrameRendered by remember(activeItem, trailerPreviewUrl) { mutableStateOf(false) }
     var trailerEnded by remember(activeItem, trailerPreviewUrl) { mutableStateOf(false) }
 
@@ -96,21 +96,21 @@ fun HeroCarousel(
 
     LaunchedEffect(activeItem, isFocused) {
         if (!isFocused) return@LaunchedEffect
-        activeItem?.let { onItemFocus(it) }
+        onItemFocus(activeItem)
     }
 
-    LaunchedEffect(isFocused, activeItem, trailerEnabled) {
-        if (!isFocused || !trailerEnabled) return@LaunchedEffect
-        val item = activeItem ?: return@LaunchedEffect
-        delay(HERO_TRAILER_REQUEST_DEBOUNCE_MS)
-        if (isFocused && activeItem.id == item.id) {
-            onRequestTrailerPreview(item)
-            delay(HERO_TRAILER_PREFETCH_DELAY_MS)
-            if (isFocused && activeItem.id == item.id) {
-                val size = items.size
-                HERO_TRAILER_PREFETCH_OFFSETS.forEach { offset ->
-                    val prefetchIndex = (activeIndex + offset + size) % size
-                    onRequestTrailerPreview(items[prefetchIndex])
+    LaunchedEffect(isFocused, activeIndex, trailerEnabled) {
+        if (isFocused && trailerEnabled) {
+            delay(HERO_TRAILER_REQUEST_DEBOUNCE_MS)
+            if (isFocused) {
+                onRequestTrailerPreview(items[activeIndex])
+                delay(HERO_TRAILER_PREFETCH_DELAY_MS)
+                if (isFocused) {
+                    val size = items.size
+                    HERO_TRAILER_PREFETCH_OFFSETS.forEach { offset ->
+                        val prefetchIndex = (activeIndex + offset + size) % size
+                        onRequestTrailerPreview(items[prefetchIndex])
+                    }
                 }
             }
         }

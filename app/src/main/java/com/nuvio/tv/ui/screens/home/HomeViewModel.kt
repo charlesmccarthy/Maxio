@@ -239,11 +239,6 @@ class HomeViewModel @Inject constructor(
 
     fun onItemFocus(item: MetaPreview) {
         onItemFocusPipeline(item)
-        fetchMdbListRatingsForItem(item)
-    }
-
-    private fun fetchMdbListRatingsForItem(item: MetaPreview) {
-        fetchMdbListRatings(item.id, item.apiType)
     }
 
     fun fetchMdbListRatings(itemId: String, itemType: String) {

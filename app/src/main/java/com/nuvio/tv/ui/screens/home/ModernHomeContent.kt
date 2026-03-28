@@ -129,7 +129,6 @@ fun ModernHomeContent(
     isCatalogItemWatched: (MetaPreview) -> Boolean = { false },
     onCatalogItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> },
     onItemFocus: (MetaPreview) -> Unit = {},
-    onFetchMdbListRatings: (String, String) -> Unit = { _, _ -> },
     onPreloadAdjacentItem: (MetaPreview) -> Unit = {},
     onSaveFocusState: (Int, Int, Int, Int, Map<String, Int>) -> Unit
 ) {
@@ -623,17 +622,6 @@ fun ModernHomeContent(
                 }
                 else -> null
             }
-        // Trigger MDBList ratings fetch for continue watching items (catalog items use onItemFocus)
-        LaunchedEffect(activeItemId, activeCarouselItem?.payload) {
-            val payload = activeCarouselItem?.payload
-            if (activeItemId != null && payload is ModernPayload.ContinueWatching) {
-                val itemType = when (val cw = payload.item) {
-                    is ContinueWatchingItem.InProgress -> cw.progress.contentType
-                    is ContinueWatchingItem.NextUp -> cw.info.contentType
-                }
-                onFetchMdbListRatings(activeItemId, itemType)
-            }
-        }
 
         val enrichmentActive = enrichingItemId != null && enrichingItemId == activeItemId
         // When enrichment is active use heroItem (frozen), when done use activeCarouselItem

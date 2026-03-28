@@ -509,9 +509,6 @@ private fun ModernHomeRoute(
         onItemFocus = remember(viewModel) {
             { item -> viewModel.onItemFocus(item) }
         },
-        onFetchMdbListRatings = remember(viewModel) {
-            { itemId: String, itemType: String -> viewModel.fetchMdbListRatings(itemId, itemType) }
-        },
         onPreloadAdjacentItem = preloadAdjacentItem,
         onSaveFocusState = saveModernFocusState
     )
