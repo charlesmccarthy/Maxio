@@ -338,7 +338,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             selectedHeroRows, { it.hasHeroArtwork() }, currentHeroOrder
         )
         val fallbackHeroItemsFromSelectedCatalogs = slotShuffled(
-            selectedHeroRows, { true }, currentHeroOrder
+            selectedHeroRows, { it.isValidCatalogItem() }, currentHeroOrder
         )
         val fallbackHeroItemsWithArtwork = slotShuffled(
             orderedRows, { it.hasHeroArtwork() }, currentHeroOrder
@@ -350,6 +350,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             fallbackHeroItemsWithArtwork.isNotEmpty() -> fallbackHeroItemsWithArtwork
             else -> emptyList()
         }
+
 
         val displayRowsSource = if (likedRowsSnapshot.isEmpty()) {
             orderedRows

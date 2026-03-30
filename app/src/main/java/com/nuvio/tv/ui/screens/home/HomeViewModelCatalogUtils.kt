@@ -120,7 +120,21 @@ internal fun CatalogDescriptor.shouldShowOnHome(): Boolean {
 }
 
 internal fun MetaPreview.hasHeroArtwork(): Boolean {
-    return !backdropUrl.isNullOrBlank()
+    return !backdropUrl.isNullOrBlank() && isValidCatalogItem()
+}
+
+/**
+ * Rejects fake catalog items that addons return as error placeholders.
+ * Some addons return errors as catalog items with data: URI images
+ * and ids like "error:Trakt_Connection_Failed".
+ */
+internal fun MetaPreview.isValidCatalogItem(): Boolean {
+    if (id.startsWith("error:")) return false
+    // Must have at least one usable HTTP image (reject data: URIs and blanks)
+    val hasRealImage = listOf(poster, background, landscapePoster, rawPosterUrl).any {
+        !it.isNullOrBlank() && !it.startsWith("data:")
+    }
+    return hasRealImage
 }
 
 internal fun HomeViewModel.extractYear(releaseInfo: String?): String? {
