@@ -43,6 +43,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.ui.theme.NuvioColors
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
@@ -67,6 +68,14 @@ fun GridContentCard(
     val density = LocalDensity.current
     val requestWidthPx = remember(density, posterCardStyle.width) { with(density) { posterCardStyle.width.roundToPx() } }
     val requestHeightPx = remember(density, posterCardStyle.height) { with(density) { posterCardStyle.height.roundToPx() } }
+    val preferredImageUrl = remember(item.displayPosterUrl, item.backdropUrl, item.posterShape, requestWidthPx, requestHeightPx) {
+        val prefersLandscape = item.posterShape == PosterShape.LANDSCAPE || requestWidthPx > requestHeightPx
+        if (prefersLandscape) {
+            item.backdropUrl ?: item.displayPosterUrl
+        } else {
+            item.displayPosterUrl ?: item.backdropUrl
+        }
+    }
     var isFocused by remember { mutableStateOf(false) }
     var longPressTriggered by remember { mutableStateOf(false) }
 
@@ -148,15 +157,15 @@ fun GridContentCard(
                 val context = LocalContext.current
                 val bgCardColor = NuvioColors.BackgroundCard
                 val bgPainter = remember(bgCardColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgCardColor) }
-                val imageModel = remember(item.poster, requestWidthPx, requestHeightPx) {
+                val imageModel = remember(preferredImageUrl, requestWidthPx, requestHeightPx) {
                     ImageRequest.Builder(context)
-                        .data(item.poster)
+                        .data(preferredImageUrl)
                         .crossfade(imageCrossfade)
                         .size(width = requestWidthPx, height = requestHeightPx)
-                        .memoryCacheKey("${item.poster}_${requestWidthPx}x${requestHeightPx}")
+                        .memoryCacheKey("${preferredImageUrl}_${requestWidthPx}x${requestHeightPx}")
                         .build()
                 }
-                if (item.poster.isNullOrBlank()) {
+                if (preferredImageUrl.isNullOrBlank()) {
                     MonochromePosterPlaceholder()
                 } else {
                     AsyncImage(

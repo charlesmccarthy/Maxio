@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.mapper
 
+import com.nuvio.tv.core.util.normalizeImageUrl
 import com.nuvio.tv.data.remote.dto.AppExtrasCastMemberDto
 import com.nuvio.tv.data.remote.dto.MetaBehaviorHintsDto
 import com.nuvio.tv.data.remote.dto.MetaReleaseDateCountryDto
@@ -42,7 +43,7 @@ internal fun mapPeople(
         MetaCastMember(
             name = name,
             character = if (forceRole) roleFallback else person.character?.takeIf { it.isNotBlank() } ?: roleFallback,
-            photo = person.photo?.takeIf { it.isNotBlank() },
+            photo = person.photo.normalizeImageUrl(),
             tmdbId = person.tmdbId
         )
     }

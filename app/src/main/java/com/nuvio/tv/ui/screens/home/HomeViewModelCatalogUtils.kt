@@ -120,7 +120,7 @@ internal fun CatalogDescriptor.shouldShowOnHome(): Boolean {
 }
 
 internal fun MetaPreview.hasHeroArtwork(): Boolean {
-    return !background.isNullOrBlank()
+    return !backdropUrl.isNullOrBlank()
 }
 
 internal fun HomeViewModel.extractYear(releaseInfo: String?): String? {

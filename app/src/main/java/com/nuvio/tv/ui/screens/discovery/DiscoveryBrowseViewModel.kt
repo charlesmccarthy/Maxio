@@ -6,6 +6,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.util.tmdbImageUrl
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
@@ -498,18 +499,29 @@ class DiscoveryBrowseViewModel @Inject constructor(
 
 private fun TmdbDiscoverResult.toBrowseMetaPreview(mediaType: String): MetaPreview {
     val isMovie = mediaType == "movie"
+    val posterUrl = tmdbBrowsePosterUrl(posterPath, backdropPath)
+    val backdropUrl = tmdbBrowseBackdropUrl(backdropPath, posterPath)
     return MetaPreview(
         id = "tmdb:$id",
         type = if (isMovie) ContentType.MOVIE else ContentType.SERIES,
         rawType = mediaType,
         name = title ?: name ?: "",
-        poster = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+        poster = posterUrl,
         posterShape = PosterShape.POSTER,
-        background = backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" },
+        background = backdropUrl,
+        landscapePoster = backdropUrl,
         logo = null,
         description = overview,
         releaseInfo = releaseDate ?: firstAirDate,
         imdbRating = voteAverage?.toFloat(),
         genres = emptyList()
     )
+}
+
+private fun tmdbBrowsePosterUrl(posterPath: String?, backdropPath: String?): String? {
+    return tmdbImageUrl(posterPath, "w500") ?: tmdbImageUrl(backdropPath, "w780")
+}
+
+private fun tmdbBrowseBackdropUrl(backdropPath: String?, posterPath: String?): String? {
+    return tmdbImageUrl(backdropPath, "w1280") ?: tmdbBrowsePosterUrl(posterPath, backdropPath)
 }

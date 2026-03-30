@@ -907,10 +907,22 @@ class MetaDetailsViewModel @Inject constructor(
                     return@launch
                 }
 
-                val ratings = imdbEpisodeRatingsRepository.getEpisodeRatings(
-                    imdbId = imdbId,
-                    tmdbId = tmdbId
-                )
+                val externalRatings = runCatching {
+                    imdbEpisodeRatingsRepository.getEpisodeRatings(
+                        imdbId = imdbId,
+                        tmdbId = tmdbId
+                    )
+                }.getOrElse { error ->
+                    Log.w(TAG, "Primary episode ratings lookup failed for ${meta.id}: ${error.message}")
+                    emptyMap()
+                }
+
+                val fallbackRatings = if (tmdbId != null) {
+                    loadTmdbEpisodeRatingFallback(meta, tmdbId)
+                } else {
+                    emptyMap()
+                }
+                val ratings = fallbackRatings + externalRatings
 
                 _uiState.update { state ->
                     if (state.meta == null || state.meta.id != meta.id) {
@@ -1058,6 +1070,35 @@ class MetaDetailsViewModel @Inject constructor(
         }
 
         return updated
+    }
+
+    private suspend fun loadTmdbEpisodeRatingFallback(
+        meta: Meta,
+        tmdbId: Int
+    ): Map<Pair<Int, Int>, Double> {
+        val settings = tmdbSettingsDataStore.settings.first()
+        if (!settings.enabled || !settings.useEpisodes) return emptyMap()
+
+        val seasons = meta.videos
+            .mapNotNull { it.season }
+            .filter { it > 0 }
+            .distinct()
+            .sorted()
+        if (seasons.isEmpty()) return emptyMap()
+
+        return runCatching {
+            tmdbMetadataService.fetchEpisodeEnrichment(
+                tmdbId = tmdbId.toString(),
+                language = settings.language,
+                seasonNumbers = seasons
+            ).mapNotNull { (seasonEpisode, enrichment) ->
+                val rating = enrichment.rating?.takeIf { it > 0.0 } ?: return@mapNotNull null
+                seasonEpisode to rating
+            }.toMap()
+        }.getOrElse { error ->
+            Log.w(TAG, "TMDB episode rating fallback failed for ${meta.id}: ${error.message}")
+            emptyMap()
+        }
     }
 
     private fun resolveTmdbContentType(meta: Meta): ContentType {

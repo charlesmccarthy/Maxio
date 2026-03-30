@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.mapper
 
+import com.nuvio.tv.core.util.normalizeImageUrl
 import com.nuvio.tv.data.remote.dto.MetaDto
 import com.nuvio.tv.data.remote.dto.MetaLinkDto
 import com.nuvio.tv.data.remote.dto.VideoDto
@@ -18,20 +19,23 @@ fun MetaDto.toDomain(episodeLabel: String = "Episode"): Meta {
         .ifEmpty { writerMembers.map { it.name } }
     val castList = coerceStringList(cast).ifEmpty { castMembers.map { it.name } }
     val trailersList = mapTrailers(trailers, trailerStreams)
+    val normalizedPoster = poster.normalizeImageUrl() ?: rawPosterUrl.normalizeImageUrl()
+    val normalizedLandscapePoster = landscapePoster.normalizeImageUrl()
+    val normalizedBackground = background.normalizeImageUrl()
 
     return Meta(
         id = id,
         type = ContentType.fromString(type),
         rawType = type,
         name = name,
-        poster = poster,
+        poster = normalizedPoster ?: normalizedLandscapePoster ?: normalizedBackground,
         posterShape = PosterShape.fromString(posterShape),
-        background = background,
-        logo = logo,
+        background = normalizedBackground ?: normalizedLandscapePoster ?: normalizedPoster,
+        logo = logo.normalizeImageUrl(),
         imdbId = imdbId,
         slug = slug,
         released = released,
-        landscapePoster = landscapePoster,
+        landscapePoster = normalizedLandscapePoster ?: normalizedBackground ?: normalizedPoster,
         description = description,
         releaseInfo = releaseInfo,
         status = status?.trim()?.takeIf { it.isNotBlank() },
@@ -51,7 +55,7 @@ fun MetaDto.toDomain(episodeLabel: String = "Episode"): Meta {
         language = language,
         links = links?.mapNotNull { it.toDomain() } ?: emptyList(),
         trailerYtIds = trailersList.mapNotNull { it.ytId }.distinct(),
-        rawPosterUrl = rawPosterUrl,
+        rawPosterUrl = rawPosterUrl.normalizeImageUrl(),
         behaviorHints = mapBehaviorHints(behaviorHints),
         trailers = trailersList,
         releaseDates = mapReleaseDates(appExtras?.releaseDates),

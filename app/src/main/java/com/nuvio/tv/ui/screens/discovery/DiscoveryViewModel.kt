@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.BuildConfig
 import androidx.compose.runtime.mutableStateMapOf
+import com.nuvio.tv.core.util.tmdbImageUrl
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
@@ -294,10 +295,12 @@ class DiscoveryViewModel @Inject constructor(
                     val newReleases = newReleasesDeferred.await()
                     val hiddenGems = hiddenGemsDeferred.await()
                     val genres = genresDeferred.await()
+                    val genreBackdropUrlsDeferred = async { fetchGenreBackdropUrls(isMovie, genres, language) }
                     val decade1 = decade1Deferred.await()
                     val decade2 = decade2Deferred.await()
                     val becauseYouWatched = becauseYouWatchedDeferred?.await()
                     val watchlist = watchlistDeferred?.await()
+                    val genreBackdropUrls = genreBackdropUrlsDeferred.await()
 
                     if (trending.isNotEmpty()) rows.add(DiscoveryRow("Trending This Week", trending))
                     if (topRated.isNotEmpty()) rows.add(DiscoveryRow("Top Rated", topRated))
@@ -321,6 +324,7 @@ class DiscoveryViewModel @Inject constructor(
                     _uiState.update { it.copy(heroItems = heroItems) }
                     publishRows(
                         genres = genres,
+                        genreBackdropUrls = genreBackdropUrls,
                         isLoading = false,
                         error = null
                     )
@@ -335,6 +339,7 @@ class DiscoveryViewModel @Inject constructor(
                 _uiState.update { it.copy(heroItems = emptyList()) }
                 publishRows(
                     genres = _uiState.value.genres,
+                    genreBackdropUrls = _uiState.value.genreBackdropUrls,
                     isLoading = false,
                     error = e.message ?: "Failed to load content"
                 )
@@ -344,6 +349,7 @@ class DiscoveryViewModel @Inject constructor(
 
     private fun publishRows(
         genres: List<TmdbGenre>,
+        genreBackdropUrls: Map<Int, String> = _uiState.value.genreBackdropUrls,
         isLoading: Boolean,
         error: String?
     ) {
@@ -364,6 +370,7 @@ class DiscoveryViewModel @Inject constructor(
             it.copy(
                 rows = combinedRows,
                 genres = genres,
+                genreBackdropUrls = genreBackdropUrls,
                 isLoading = isLoading,
                 error = error
             )
@@ -382,6 +389,7 @@ class DiscoveryViewModel @Inject constructor(
                 likedRecommendationRow = null
                 publishRows(
                     genres = _uiState.value.genres,
+                    genreBackdropUrls = _uiState.value.genreBackdropUrls,
                     isLoading = _uiState.value.isLoading,
                     error = _uiState.value.error
                 )
@@ -393,6 +401,7 @@ class DiscoveryViewModel @Inject constructor(
                 likedRecommendationRow = null
                 publishRows(
                     genres = _uiState.value.genres,
+                    genreBackdropUrls = _uiState.value.genreBackdropUrls,
                     isLoading = _uiState.value.isLoading,
                     error = _uiState.value.error
                 )
@@ -442,6 +451,7 @@ class DiscoveryViewModel @Inject constructor(
                 }
             publishRows(
                 genres = _uiState.value.genres,
+                genreBackdropUrls = _uiState.value.genreBackdropUrls,
                 isLoading = _uiState.value.isLoading,
                 error = _uiState.value.error
             )
@@ -646,6 +656,46 @@ class DiscoveryViewModel @Inject constructor(
         }
     }
 
+    private suspend fun fetchGenreBackdropUrls(
+        isMovie: Boolean,
+        genres: List<TmdbGenre>,
+        language: String?
+    ): Map<Int, String> = coroutineScope {
+        val today = LocalDate.now().toString()
+        genres.map { genre ->
+            async {
+                val response = if (isMovie) {
+                    tmdbApi.discoverMovies(
+                        apiKey = TMDB_API_KEY,
+                        language = language,
+                        sortBy = "popularity.desc",
+                        voteCountGte = 100,
+                        releaseDateLte = today,
+                        withGenres = genre.id.toString()
+                    )
+                } else {
+                    tmdbApi.discoverTv(
+                        apiKey = TMDB_API_KEY,
+                        language = language,
+                        sortBy = "popularity.desc",
+                        voteCountGte = 50,
+                        firstAirDateLte = today,
+                        withGenres = genre.id.toString()
+                    )
+                }
+                val backdropUrl = response.body()
+                    ?.results
+                    .orEmpty()
+                    .firstOrNull { !it.backdropPath.isNullOrBlank() }
+                    ?.backdropPath
+                    ?.let { path -> "https://image.tmdb.org/t/p/w780$path" }
+                genre.id to backdropUrl
+            }
+        }.awaitAll()
+            .mapNotNull { (genreId, backdropUrl) -> backdropUrl?.let { genreId to it } }
+            .toMap()
+    }
+
     private suspend fun fetchBecauseYouWatched(isMovie: Boolean, language: String?): Pair<String, List<MetaPreview>>? {
         return try {
             val mediaType = if (isMovie) "movie" else "series"
@@ -672,14 +722,17 @@ class DiscoveryViewModel @Inject constructor(
                 tmdbApi.getTvRecommendations(tvId = seedTmdbId, apiKey = TMDB_API_KEY, language = language)
             }
             val recs = recsResponse.body()?.results.orEmpty().map { rec ->
+                val posterUrl = tmdbPosterUrl(rec.posterPath, rec.backdropPath)
+                val backdropUrl = tmdbBackdropUrl(rec.backdropPath, rec.posterPath)
                 MetaPreview(
                     id = "tmdb:${rec.id}",
                     type = if (isMovie) ContentType.MOVIE else ContentType.SERIES,
                     rawType = mediaType,
                     name = rec.title ?: rec.name ?: "",
-                    poster = rec.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                    poster = posterUrl,
                     posterShape = PosterShape.POSTER,
-                    background = rec.backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" },
+                    background = backdropUrl,
+                    landscapePoster = backdropUrl,
                     logo = null,
                     description = rec.overview,
                     releaseInfo = rec.releaseDate ?: rec.firstAirDate,
@@ -721,14 +774,17 @@ class DiscoveryViewModel @Inject constructor(
                                 tmdbApi.getTvDetails(tvId = tmdbId, apiKey = TMDB_API_KEY, language = language)
                             }
                             val body = details.body() ?: return@async null
+                            val posterUrl = tmdbPosterUrl(body.posterPath, body.backdropPath)
+                            val backdropUrl = tmdbBackdropUrl(body.backdropPath, body.posterPath)
                             MetaPreview(
                                 id = imdbId ?: "tmdb:$tmdbId",
                                 type = if (isMovie) ContentType.MOVIE else ContentType.SERIES,
                                 rawType = mediaType,
                                 name = body.title ?: body.name ?: title,
-                                poster = body.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                                poster = posterUrl,
                                 posterShape = PosterShape.POSTER,
-                                background = body.backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" },
+                                background = backdropUrl,
+                                landscapePoster = backdropUrl,
                                 logo = null,
                                 description = body.overview,
                                 releaseInfo = body.releaseDate ?: body.firstAirDate,
@@ -751,14 +807,17 @@ class DiscoveryViewModel @Inject constructor(
 
 private fun TmdbDiscoverResult.toMetaPreview(mediaType: String): MetaPreview {
     val isMovie = mediaType == "movie"
+    val posterUrl = tmdbPosterUrl(posterPath, backdropPath)
+    val backdropUrl = tmdbBackdropUrl(backdropPath, posterPath)
     return MetaPreview(
         id = "tmdb:$id",
         type = if (isMovie) ContentType.MOVIE else ContentType.SERIES,
         rawType = mediaType,
         name = title ?: name ?: "",
-        poster = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+        poster = posterUrl,
         posterShape = PosterShape.POSTER,
-        background = backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" },
+        background = backdropUrl,
+        landscapePoster = backdropUrl,
         logo = null,
         description = overview,
         releaseInfo = releaseDate ?: firstAirDate,
@@ -768,6 +827,14 @@ private fun TmdbDiscoverResult.toMetaPreview(mediaType: String): MetaPreview {
 }
 
 private fun likedStatusKey(item: MetaPreview): String = "${item.apiType}:${item.id}"
+
+private fun tmdbPosterUrl(posterPath: String?, backdropPath: String?): String? {
+    return tmdbImageUrl(posterPath, "w500") ?: tmdbImageUrl(backdropPath, "w780")
+}
+
+private fun tmdbBackdropUrl(backdropPath: String?, posterPath: String?): String? {
+    return tmdbImageUrl(backdropPath, "w1280") ?: tmdbPosterUrl(posterPath, backdropPath)
+}
 
 private fun likedContentType(item: MetaPreview): ContentType {
     return when (item.apiType.lowercase()) {

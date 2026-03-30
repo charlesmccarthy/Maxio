@@ -68,6 +68,7 @@ import kotlinx.coroutines.delay
 private const val KEY_REPEAT_THROTTLE_MS = 200L
 private const val ITEM_FOCUS_DEBOUNCE_MS = 130L
 private const val TRAILER_REQUEST_DEBOUNCE_MS = 50L
+private const val TRAILER_PLAY_DELAY_MS = 750L
 private const val SLIDE_ANIM_MS = 180
 private const val EXPANDED_CARD_WIDTH_DP = 430
 private const val EXPANDED_CARD_HEIGHT_MULTIPLIER = 1.24f
@@ -94,6 +95,7 @@ fun NetflixStyleRow(
     logoOverrides: Map<String, String> = emptyMap(),
     showSelectedPosterInStrip: Boolean = false,
     highlightSelectedPoster: Boolean = false,
+    showDescriptionInExpandedCard: Boolean = false,
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     onItemFocus: (MetaPreview) -> Unit = {},
     trailerEnabled: Boolean = false,
@@ -182,6 +184,19 @@ fun NetflixStyleRow(
 
     val selectedTrailerPreviewUrl = trailerPreviewUrls[items[selectedIndex].id]
     val selectedTrailerPreviewAudioUrl = trailerPreviewAudioUrls[items[selectedIndex].id]
+    var shouldPlayTrailer by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isFocused, selectedIndex, trailerEnabled, selectedTrailerPreviewUrl, selectedTrailerPreviewAudioUrl) {
+        if (!isFocused || !trailerEnabled || selectedTrailerPreviewUrl.isNullOrBlank()) {
+            shouldPlayTrailer = false
+            return@LaunchedEffect
+        }
+        shouldPlayTrailer = false
+        delay(TRAILER_PLAY_DELAY_MS)
+        if (isFocused && trailerEnabled && !selectedTrailerPreviewUrl.isNullOrBlank()) {
+            shouldPlayTrailer = true
+        }
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Title row
@@ -296,10 +311,11 @@ fun NetflixStyleRow(
                 shape = cardShape,
                 isFocused = isFocused,
                 isLiked = isItemLiked(items[selectedIndex]),
-                trailerPreviewUrl = if (trailerEnabled) selectedTrailerPreviewUrl else null,
-                trailerPreviewAudioUrl = if (trailerEnabled) selectedTrailerPreviewAudioUrl else null,
+                trailerPreviewUrl = if (trailerEnabled && shouldPlayTrailer) selectedTrailerPreviewUrl else null,
+                trailerPreviewAudioUrl = if (trailerEnabled && shouldPlayTrailer) selectedTrailerPreviewAudioUrl else null,
                 trailerMuted = trailerMuted,
                 logoOverrides = logoOverrides,
+                showDescriptionInExpandedCard = showDescriptionInExpandedCard,
                 onTrailerProgressChanged = onTrailerProgressChanged
             )
 
@@ -362,6 +378,7 @@ fun NetflixStyleRow(
         ExpandedCardMeta(
             items = items,
             selectedIndex = selectedIndex,
+            showDescription = !showDescriptionInExpandedCard,
             modifier = Modifier.padding(start = 48.dp, end = 48.dp, top = 8.dp)
         )
     }
@@ -381,12 +398,22 @@ private fun ExpandedCarouselCard(
     trailerPreviewAudioUrl: String?,
     trailerMuted: Boolean,
     logoOverrides: Map<String, String> = emptyMap(),
+    showDescriptionInExpandedCard: Boolean = false,
     onTrailerProgressChanged: (itemId: String, positionMs: Long) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
     val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
+    val selectedItem = items[selectedIndex]
+    val overlayHeight = if (
+        showDescriptionInExpandedCard &&
+        !selectedItem.description.isNullOrBlank()
+    ) {
+        132.dp
+    } else {
+        96.dp
+    }
 
     Box(
         modifier = Modifier
@@ -447,7 +474,7 @@ private fun ExpandedCarouselCard(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .fillMaxWidth()
-                            .height(96.dp)
+                            .height(overlayHeight)
                             .drawWithCache {
                                 val gradient = Brush.verticalGradient(
                                     colors = listOf(
@@ -462,7 +489,13 @@ private fun ExpandedCarouselCard(
                     )
 
                     // Logo or title overlay
-                    ExpandedCardTitle(item = item, context = context, requestWidthPx = requestWidthPx, logoOverrides = logoOverrides)
+                    ExpandedCardTitle(
+                        item = item,
+                        context = context,
+                        requestWidthPx = requestWidthPx,
+                        logoOverrides = logoOverrides,
+                        showDescription = showDescriptionInExpandedCard
+                    )
                 }
             }
 
@@ -491,7 +524,7 @@ private fun ExpandedCarouselCard(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .height(96.dp)
+                    .height(overlayHeight)
                     .drawWithCache {
                         val gradient = Brush.verticalGradient(
                             colors = listOf(
@@ -513,7 +546,8 @@ private fun ExpandedCarouselCard(
                     item = items[animatedIndex],
                     context = context,
                     requestWidthPx = requestWidthPx,
-                    logoOverrides = logoOverrides
+                    logoOverrides = logoOverrides,
+                    showDescription = showDescriptionInExpandedCard
                 )
             }
 
@@ -553,7 +587,8 @@ private fun ExpandedCardTitle(
     item: MetaPreview,
     context: android.content.Context,
     requestWidthPx: Int,
-    logoOverrides: Map<String, String> = emptyMap()
+    logoOverrides: Map<String, String> = emptyMap(),
+    showDescription: Boolean = false
 ) {
     val density = LocalDensity.current
     val logoRequestHeightPx = remember(density) { with(density) { 48.dp.roundToPx() } }
@@ -594,6 +629,19 @@ private fun ExpandedCardTitle(
                 overflow = TextOverflow.Ellipsis
             )
         }
+
+        if (showDescription) {
+            item.description?.takeIf { it.isNotBlank() }?.let { description ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.82f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 
@@ -612,12 +660,13 @@ private fun CarouselPosterCard(
     val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
     val bgColor = NuvioColors.BackgroundCard
     val backgroundPainter = remember(bgColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgColor) }
+    val posterUrl = item.displayPosterUrl
 
-    val imageModel = remember(item.poster, requestWidthPx, requestHeightPx) {
+    val imageModel = remember(posterUrl, requestWidthPx, requestHeightPx) {
         ImageRequest.Builder(context)
-            .data(item.poster)
+            .data(posterUrl)
             .crossfade(false)
-            .memoryCacheKey("netflix_poster_${item.poster}_${requestWidthPx}x${requestHeightPx}")
+            .memoryCacheKey("netflix_poster_${posterUrl}_${requestWidthPx}x${requestHeightPx}")
             .size(width = requestWidthPx, height = requestHeightPx)
             .build()
     }
@@ -633,7 +682,7 @@ private fun CarouselPosterCard(
             )
             .clip(shape)
     ) {
-        if (!item.poster.isNullOrBlank()) {
+        if (!posterUrl.isNullOrBlank()) {
             AsyncImage(
                 model = imageModel,
                 contentDescription = item.name,
@@ -674,6 +723,7 @@ private fun CarouselPosterCard(
 private fun ExpandedCardMeta(
     items: List<MetaPreview>,
     selectedIndex: Int,
+    showDescription: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Crossfade(
@@ -704,7 +754,8 @@ private fun ExpandedCardMeta(
                 )
             }
 
-            item.description?.takeIf { it.isNotBlank() }?.let { description ->
+            if (showDescription) {
+                item.description?.takeIf { it.isNotBlank() }?.let { description ->
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = description,
@@ -713,6 +764,7 @@ private fun ExpandedCardMeta(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
             }
         }
     }

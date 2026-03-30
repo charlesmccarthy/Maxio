@@ -59,6 +59,7 @@ import kotlinx.coroutines.delay
 
 private const val AUTO_ADVANCE_INTERVAL_MS = 10000L
 private const val HERO_TRAILER_REQUEST_DEBOUNCE_MS = 150L
+private const val HERO_TRAILER_PLAY_DELAY_MS = 750L
 private const val HERO_TRAILER_PREFETCH_DELAY_MS = 1200L
 private val HERO_TRAILER_PREFETCH_OFFSETS = listOf(1, -1, 2, -2, 3, 4)
 private val HERO_SHAPE = RoundedCornerShape(18.dp)
@@ -76,6 +77,7 @@ fun HeroCarousel(
     trailerMuted: Boolean = true,
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     onItemFocus: (MetaPreview) -> Unit = {},
+    onFocused: () -> Unit = {},
     focusRequester: FocusRequester? = null,
     fullWidth: Dp = Dp.Unspecified,
     modifier: Modifier = Modifier
@@ -89,6 +91,7 @@ fun HeroCarousel(
     val trailerPreviewAudioUrl = trailerPreviewAudioUrls[activeItem.id]
     var trailerFirstFrameRendered by remember(activeItem, trailerPreviewUrl) { mutableStateOf(false) }
     var trailerEnded by remember(activeItem, trailerPreviewUrl) { mutableStateOf(false) }
+    var shouldPlayTrailer by remember { mutableStateOf(false) }
 
     LaunchedEffect(items.size) {
         activeIndex = activeIndex.coerceIn(0, items.lastIndex)
@@ -97,6 +100,12 @@ fun HeroCarousel(
     LaunchedEffect(activeItem, isFocused) {
         if (!isFocused) return@LaunchedEffect
         onItemFocus(activeItem)
+    }
+
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            onFocused()
+        }
     }
 
     LaunchedEffect(isFocused, activeIndex, trailerEnabled) {
@@ -113,6 +122,18 @@ fun HeroCarousel(
                     }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(isFocused, activeIndex, trailerEnabled, trailerPreviewUrl, trailerPreviewAudioUrl) {
+        if (!isFocused || !trailerEnabled || trailerPreviewUrl.isNullOrBlank() || trailerEnded) {
+            shouldPlayTrailer = false
+            return@LaunchedEffect
+        }
+        shouldPlayTrailer = false
+        delay(HERO_TRAILER_PLAY_DELAY_MS)
+        if (isFocused && trailerEnabled && !trailerPreviewUrl.isNullOrBlank() && !trailerEnded) {
+            shouldPlayTrailer = true
         }
     }
 
@@ -187,8 +208,8 @@ fun HeroCarousel(
                 val item = items.getOrNull(index) ?: return@Crossfade
                 HeroCarouselSlide(
                     item = item,
-                    trailerPreviewUrl = if (isFocused && trailerEnabled && !trailerEnded) trailerPreviewUrl else null,
-                    trailerPreviewAudioUrl = if (isFocused && trailerEnabled && !trailerEnded) trailerPreviewAudioUrl else null,
+                    trailerPreviewUrl = if (isFocused && trailerEnabled && shouldPlayTrailer && !trailerEnded) trailerPreviewUrl else null,
+                    trailerPreviewAudioUrl = if (isFocused && trailerEnabled && shouldPlayTrailer && !trailerEnded) trailerPreviewAudioUrl else null,
                     logoUrlOverride = logoOverrides[item.id],
                     trailerMuted = trailerMuted,
                     trailerFirstFrameRendered = trailerFirstFrameRendered,

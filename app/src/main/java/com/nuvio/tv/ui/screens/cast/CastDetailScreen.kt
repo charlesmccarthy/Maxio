@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.screens.cast
 
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -13,22 +14,26 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,15 +41,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -55,10 +63,11 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PersonDetail
-import com.nuvio.tv.ui.components.GridContentCard
+import com.nuvio.tv.domain.model.MetaPreview
+import com.nuvio.tv.ui.components.MediaPosterOptionsDialog
 import com.nuvio.tv.ui.components.NetflixStyleRow
+import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.components.PosterCardStyle
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.theme.NuvioColors
@@ -68,6 +77,8 @@ import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
+import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -126,17 +137,30 @@ private fun CastDetailContent(
             .sortedByDescending { releaseYearSortKey(it.releaseInfo) }
     }
 
-    val filmographyPosterStyle = remember {
-        PosterCardStyle(
-            width = 112.dp,
-            height = 168.dp,
-            cornerRadius = PosterCardDefaults.Style.cornerRadius,
-            focusedBorderWidth = PosterCardDefaults.Style.focusedBorderWidth,
-            focusedScale = PosterCardDefaults.Style.focusedScale
-        )
+    val firstPosterFocusRequester = remember { FocusRequester() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var selectedFilmographyIndex by rememberSaveable(person.tmdbId) { mutableStateOf(0) }
+    var restoreFilmographyFocusNonce by rememberSaveable(person.tmdbId) { mutableStateOf(0) }
+    var showFullBiography by remember { mutableStateOf(false) }
+    var optionsItem by remember { mutableStateOf<MetaPreview?>(null) }
+
+    DisposableEffect(lifecycleOwner, allCredits, selectedFilmographyIndex) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && allCredits.isNotEmpty()) {
+                restoreFilmographyFocusNonce += 1
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
-    val firstPosterFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(restoreFilmographyFocusNonce, allCredits.size) {
+        if (allCredits.isEmpty()) return@LaunchedEffect
+        repeat(2) { awaitFrame() }
+        runCatching { firstPosterFocusRequester.requestFocus() }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Left accent gradient overlay
@@ -164,7 +188,14 @@ private fun CastDetailContent(
             enter = fadeIn()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                HeroSection(person = person)
+                HeroSection(
+                    person = person,
+                    onReadFullBio = if (!person.biography.isNullOrBlank()) {
+                        { showFullBiography = true }
+                    } else {
+                        null
+                    }
+                )
 
                 if (allCredits.isNotEmpty()) {
                     FilmographyRow(
@@ -178,12 +209,42 @@ private fun CastDetailContent(
                         onRequestTrailerPreview = viewModel::requestTrailerPreview,
                         onItemFocus = viewModel::requestLogo,
                         firstItemFocusRequester = firstPosterFocusRequester,
+                        initialSelectedIndex = selectedFilmographyIndex,
+                        onSelectedIndexChange = { selectedFilmographyIndex = it },
+                        onItemLongPress = { item -> optionsItem = item },
+                        isItemLiked = { item -> viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true },
                         onItemClick = { item ->
                             onNavigateToDetail(item.id, item.apiType, null)
                         }
                     )
                 }
             }
+        }
+
+        if (showFullBiography && !person.biography.isNullOrBlank()) {
+            BackHandler { showFullBiography = false }
+            BiographyDialog(
+                name = person.name,
+                biography = person.biography,
+                onDismiss = { showFullBiography = false }
+            )
+        }
+
+        optionsItem?.let { item ->
+            BackHandler { optionsItem = null }
+            MediaPosterOptionsDialog(
+                title = item.name,
+                isLiked = viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true,
+                onDismiss = { optionsItem = null },
+                onDetails = {
+                    onNavigateToDetail(item.id, item.apiType, null)
+                    optionsItem = null
+                },
+                onToggleLike = {
+                    viewModel.toggleLiked(item)
+                    optionsItem = null
+                }
+            )
         }
     }
 }
@@ -198,7 +259,10 @@ private fun releaseYearSortKey(releaseInfo: String?): Int {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun HeroSection(person: PersonDetail) {
+private fun HeroSection(
+    person: PersonDetail,
+    onReadFullBio: (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -216,8 +280,8 @@ private fun HeroSection(person: PersonDetail) {
                 shape = RoundedCornerShape(16.dp)
             ),
             colors = CardDefaults.colors(
-                containerColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent
+                containerColor = NuvioColors.SurfaceVariant,
+                focusedContainerColor = NuvioColors.SurfaceVariant
             ),
             border = CardDefaults.border(
                 border = Border(
@@ -230,14 +294,11 @@ private fun HeroSection(person: PersonDetail) {
                 )
             )
         ) {
-            val bgCardColor = NuvioColors.SurfaceVariant
-            val bgPainter = remember(bgCardColor) { androidx.compose.ui.graphics.painter.ColorPainter(bgCardColor) }
             val photo = person.profilePhoto
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(16.dp))
-                    .then(if (photo.isNullOrBlank()) Modifier.background(bgCardColor) else Modifier),
+                    .clip(RoundedCornerShape(16.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (!photo.isNullOrBlank()) {
@@ -252,9 +313,6 @@ private fun HeroSection(person: PersonDetail) {
                             .build(),
                         contentDescription = person.name,
                         modifier = Modifier.fillMaxSize(),
-                        placeholder = bgPainter,
-                        error = bgPainter,
-                        fallback = bgPainter,
                         contentScale = ContentScale.Crop
                     )
                 } else {
@@ -335,6 +393,19 @@ private fun HeroSection(person: PersonDetail) {
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                if (bio.length > 220 && onReadFullBio != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onReadFullBio,
+                        colors = ButtonDefaults.colors(
+                            containerColor = NuvioColors.BackgroundCard,
+                            contentColor = NuvioColors.TextPrimary
+                        )
+                    ) {
+                        Text(stringResource(R.string.cast_detail_read_full_bio))
+                    }
+                }
             }
         }
     }
@@ -383,6 +454,10 @@ private fun FilmographyRow(
     onRequestTrailerPreview: (MetaPreview) -> Unit,
     onItemFocus: (MetaPreview) -> Unit,
     firstItemFocusRequester: FocusRequester,
+    initialSelectedIndex: Int,
+    onSelectedIndexChange: (Int) -> Unit,
+    onItemLongPress: (MetaPreview) -> Unit,
+    isItemLiked: (MetaPreview) -> Boolean,
     onItemClick: (MetaPreview) -> Unit
 ) {
     NetflixStyleRow(
@@ -390,15 +465,92 @@ private fun FilmographyRow(
         subtitle = "${credits.size} titles",
         items = credits,
         focusRequester = firstItemFocusRequester,
+        initialSelectedIndex = initialSelectedIndex,
+        onSelectedIndexChange = onSelectedIndexChange,
         onItemClick = onItemClick,
+        onItemLongPress = onItemLongPress,
+        isItemLiked = isItemLiked,
         trailerPreviewUrls = trailerPreviewUrls,
         trailerPreviewAudioUrls = trailerPreviewAudioUrls,
         logoOverrides = logoOverrides,
         trailerEnabled = trailerEnabled,
         trailerMuted = trailerMuted,
         onRequestTrailerPreview = onRequestTrailerPreview,
-        onItemFocus = onItemFocus
+        onItemFocus = onItemFocus,
+        showDescriptionInExpandedCard = true
     )
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun BiographyDialog(
+    name: String,
+    biography: String,
+    onDismiss: () -> Unit
+) {
+    val primaryFocusRequester = remember { FocusRequester() }
+    val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        primaryFocusRequester.requestFocus()
+    }
+
+    NuvioDialog(
+        onDismiss = onDismiss,
+        title = name,
+        subtitle = stringResource(R.string.cast_detail_biography),
+        width = 720.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+                .focusRequester(primaryFocusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    val native = event.nativeKeyEvent
+                    if (native.action != AndroidKeyEvent.ACTION_DOWN) {
+                        return@onPreviewKeyEvent false
+                    }
+                    when (native.keyCode) {
+                        AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                            coroutineScope.launch {
+                                val target = (scrollState.value + 180).coerceAtMost(scrollState.maxValue)
+                                scrollState.animateScrollTo(target)
+                            }
+                            true
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                            coroutineScope.launch {
+                                val target = (scrollState.value - 180).coerceAtLeast(0)
+                                scrollState.animateScrollTo(target)
+                            }
+                            true
+                        }
+
+                        else -> false
+                    }
+                }
+                .clip(RoundedCornerShape(18.dp))
+                .background(NuvioColors.BackgroundCard)
+                .padding(20.dp)
+        ) {
+            Text(
+                text = biography,
+                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                color = NuvioColors.TextPrimary,
+                modifier = Modifier.verticalScroll(scrollState)
+            )
+        }
+
+        Text(
+            text = stringResource(R.string.cast_detail_biography_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = NuvioColors.TextSecondary
+        )
+    }
 }
 
 // ─── Loading / Error States ───

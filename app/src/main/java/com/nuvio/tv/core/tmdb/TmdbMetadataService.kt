@@ -413,7 +413,9 @@ class TmdbMetadataService @Inject constructor(
                         }
 
                         val backdrop = buildImageUrl(localizedBackdropPath ?: rec.backdropPath, size = "w1280")
-                        val fallbackPoster = buildImageUrl(rec.posterPath, size = "w780")
+                        val fallbackPoster = buildImageUrl(rec.posterPath, size = "w500")
+                            ?: buildImageUrl(localizedBackdropPath ?: rec.backdropPath, size = "w780")
+                        val landscapeArtwork = backdrop ?: fallbackPoster
 
                         val releaseInfo = if (recTmdbType == "tv") {
                             val startYear = rec.firstAirDate?.take(4)
@@ -433,10 +435,10 @@ class TmdbMetadataService @Inject constructor(
                             id = "tmdb:${rec.id}",
                             type = recContentType,
                             name = title,
-                            poster = fallbackPoster ?: backdrop,
+                            poster = fallbackPoster,
                             posterShape = PosterShape.POSTER,
-                            background = backdrop,
-                            landscapePoster = backdrop,
+                            background = landscapeArtwork,
+                            landscapePoster = landscapeArtwork,
                             logo = null,
                             description = rec.overview?.takeIf { it.isNotBlank() },
                             releaseInfo = releaseInfo,
@@ -494,16 +496,19 @@ class TmdbMetadataService @Inject constructor(
                         }
 
                         val backdrop = buildImageUrl(localizedBackdropPath ?: part.backdropPath, size = "w1280")
-                        val fallbackPoster = buildImageUrl(part.posterPath, size = "w780")
+                        val fallbackPoster = buildImageUrl(part.posterPath, size = "w500")
+                            ?: buildImageUrl(localizedBackdropPath ?: part.backdropPath, size = "w780")
+                        val landscapeArtwork = backdrop ?: fallbackPoster
                         val releaseInfo = part.releaseDate?.take(4)
 
                         MetaPreview(
                             id = "tmdb:${part.id}",
                             type = ContentType.MOVIE,
                             name = title,
-                            poster = backdrop ?: fallbackPoster,
-                            posterShape = PosterShape.LANDSCAPE,
-                            background = backdrop,
+                            poster = fallbackPoster,
+                            posterShape = PosterShape.POSTER,
+                            background = landscapeArtwork,
+                            landscapePoster = landscapeArtwork,
                             logo = null,
                             description = part.overview?.takeIf { it.isNotBlank() },
                             releaseInfo = releaseInfo,
@@ -815,7 +820,11 @@ class TmdbMetadataService @Inject constructor(
 
     private fun buildImageUrl(path: String?, size: String): String? {
         val clean = path?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        return "https://image.tmdb.org/t/p/$size$clean"
+        if (clean.startsWith("http://") || clean.startsWith("https://")) {
+            return clean
+        }
+        val normalizedPath = if (clean.startsWith("/")) clean else "/$clean"
+        return "https://image.tmdb.org/t/p/$size$normalizedPath"
     }
 
     private fun normalizeTmdbLanguage(language: String?): String {
@@ -944,19 +953,23 @@ class TmdbMetadataService @Inject constructor(
     private fun mapMovieCreditsFromCast(cast: List<TmdbPersonCreditCast>): List<MetaPreview> {
         val seenMovieIds = mutableSetOf<Int>()
         return cast
-            .filter { it.mediaType == "movie" && it.posterPath != null }
+            .filter { it.mediaType == "movie" && (it.posterPath != null || it.backdropPath != null) }
             .sortedByDescending { it.voteAverage ?: 0.0 }
             .mapNotNull { credit ->
                 if (!seenMovieIds.add(credit.id)) return@mapNotNull null
                 val title = credit.title ?: credit.name ?: return@mapNotNull null
                 val year = credit.releaseDate?.take(4)
+                val poster = buildImageUrl(credit.posterPath, "w500")
+                    ?: buildImageUrl(credit.backdropPath, "w780")
+                val backdrop = buildImageUrl(credit.backdropPath, "w1280") ?: poster
                 MetaPreview(
                     id = "tmdb:${credit.id}",
                     type = ContentType.MOVIE,
                     name = title,
-                    poster = buildImageUrl(credit.posterPath, "w500"),
+                    poster = poster,
                     posterShape = PosterShape.POSTER,
-                    background = buildImageUrl(credit.backdropPath, "w1280"),
+                    background = backdrop,
+                    landscapePoster = backdrop,
                     logo = null,
                     description = credit.overview?.takeIf { it.isNotBlank() },
                     releaseInfo = year,
@@ -969,19 +982,23 @@ class TmdbMetadataService @Inject constructor(
     private fun mapMovieCreditsFromCrew(crew: List<TmdbPersonCreditCrew>): List<MetaPreview> {
         val seenMovieIds = mutableSetOf<Int>()
         return crew
-            .filter { it.mediaType == "movie" && it.posterPath != null }
+            .filter { it.mediaType == "movie" && (it.posterPath != null || it.backdropPath != null) }
             .sortedByDescending { it.voteAverage ?: 0.0 }
             .mapNotNull { credit ->
                 if (!seenMovieIds.add(credit.id)) return@mapNotNull null
                 val title = credit.title ?: credit.name ?: return@mapNotNull null
                 val year = credit.releaseDate?.take(4)
+                val poster = buildImageUrl(credit.posterPath, "w500")
+                    ?: buildImageUrl(credit.backdropPath, "w780")
+                val backdrop = buildImageUrl(credit.backdropPath, "w1280") ?: poster
                 MetaPreview(
                     id = "tmdb:${credit.id}",
                     type = ContentType.MOVIE,
                     name = title,
-                    poster = buildImageUrl(credit.posterPath, "w500"),
+                    poster = poster,
                     posterShape = PosterShape.POSTER,
-                    background = buildImageUrl(credit.backdropPath, "w1280"),
+                    background = backdrop,
+                    landscapePoster = backdrop,
                     logo = null,
                     description = credit.overview?.takeIf { it.isNotBlank() },
                     releaseInfo = year,
@@ -994,19 +1011,23 @@ class TmdbMetadataService @Inject constructor(
     private fun mapTvCreditsFromCast(cast: List<TmdbPersonCreditCast>): List<MetaPreview> {
         val seenTvIds = mutableSetOf<Int>()
         return cast
-            .filter { it.mediaType == "tv" && it.posterPath != null }
+            .filter { it.mediaType == "tv" && (it.posterPath != null || it.backdropPath != null) }
             .sortedByDescending { it.voteAverage ?: 0.0 }
             .mapNotNull { credit ->
                 if (!seenTvIds.add(credit.id)) return@mapNotNull null
                 val title = credit.name ?: credit.title ?: return@mapNotNull null
                 val year = credit.firstAirDate?.take(4)
+                val poster = buildImageUrl(credit.posterPath, "w500")
+                    ?: buildImageUrl(credit.backdropPath, "w780")
+                val backdrop = buildImageUrl(credit.backdropPath, "w1280") ?: poster
                 MetaPreview(
                     id = "tmdb:${credit.id}",
                     type = ContentType.SERIES,
                     name = title,
-                    poster = buildImageUrl(credit.posterPath, "w500"),
+                    poster = poster,
                     posterShape = PosterShape.POSTER,
-                    background = buildImageUrl(credit.backdropPath, "w1280"),
+                    background = backdrop,
+                    landscapePoster = backdrop,
                     logo = null,
                     description = credit.overview?.takeIf { it.isNotBlank() },
                     releaseInfo = year,
@@ -1019,19 +1040,23 @@ class TmdbMetadataService @Inject constructor(
     private fun mapTvCreditsFromCrew(crew: List<TmdbPersonCreditCrew>): List<MetaPreview> {
         val seenTvIds = mutableSetOf<Int>()
         return crew
-            .filter { it.mediaType == "tv" && it.posterPath != null }
+            .filter { it.mediaType == "tv" && (it.posterPath != null || it.backdropPath != null) }
             .sortedByDescending { it.voteAverage ?: 0.0 }
             .mapNotNull { credit ->
                 if (!seenTvIds.add(credit.id)) return@mapNotNull null
                 val title = credit.name ?: credit.title ?: return@mapNotNull null
                 val year = credit.firstAirDate?.take(4)
+                val poster = buildImageUrl(credit.posterPath, "w500")
+                    ?: buildImageUrl(credit.backdropPath, "w780")
+                val backdrop = buildImageUrl(credit.backdropPath, "w1280") ?: poster
                 MetaPreview(
                     id = "tmdb:${credit.id}",
                     type = ContentType.SERIES,
                     name = title,
-                    poster = buildImageUrl(credit.posterPath, "w500"),
+                    poster = poster,
                     posterShape = PosterShape.POSTER,
-                    background = buildImageUrl(credit.backdropPath, "w1280"),
+                    background = backdrop,
+                    landscapePoster = backdrop,
                     logo = null,
                     description = credit.overview?.takeIf { it.isNotBlank() },
                     releaseInfo = year,
@@ -1124,7 +1149,8 @@ data class TmdbEpisodeEnrichment(
     val overview: String?,
     val thumbnail: String?,
     val airDate: String?,
-    val runtimeMinutes: Int?
+    val runtimeMinutes: Int?,
+    val rating: Double?
 )
 
 enum class TmdbEntityKind(val routeValue: String) {
@@ -1189,6 +1215,7 @@ private fun TmdbEpisode.toEnrichment(): TmdbEpisodeEnrichment {
         overview = overview,
         thumbnail = thumbnail,
         airDate = airDate,
-        runtimeMinutes = runtime
+        runtimeMinutes = runtime,
+        rating = voteAverage
     )
 }

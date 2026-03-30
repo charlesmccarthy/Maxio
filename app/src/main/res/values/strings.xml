@@ -1039,6 +1039,9 @@
     <string name="cast_detail_born">Born: %1$s</string>
     <string name="cast_detail_born_died">Born: %1$s — †%2$s</string>
     <string name="cast_detail_age">age %1$d</string>
+    <string name="cast_detail_biography">Biography</string>
+    <string name="cast_detail_read_full_bio">Read Full Bio</string>
+    <string name="cast_detail_biography_hint">Use Up/Down to scroll. Press Back to close.</string>
 
     <!-- CatalogSeeAllScreen -->
     <string name="catalog_see_all_from">from %1$s</string>

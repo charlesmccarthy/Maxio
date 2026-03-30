@@ -64,6 +64,7 @@ import kotlinx.coroutines.delay
 
 private const val BACKDROP_ASPECT_RATIO = 16f / 9f
 private const val TRAILER_PREVIEW_REQUEST_FOCUS_DEBOUNCE_MS = 140L
+private const val TRAILER_PREVIEW_PLAY_DELAY_MS = 750L
 private val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -104,6 +105,7 @@ fun ContentCard(
     var interactionNonce by remember { mutableIntStateOf(0) }
     var isBackdropExpanded by remember { mutableStateOf(false) }
     var trailerFirstFrameRendered by remember(trailerPreviewUrl) { mutableStateOf(false) }
+    var shouldPlayTrailerPreview by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
 
@@ -147,6 +149,34 @@ fun ContentCard(
             if (!isFocused) return@LaunchedEffect
             if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@LaunchedEffect
             onRequestTrailerPreview(item)
+        }
+    }
+
+    if (focusedPosterBackdropTrailerEnabled) {
+        LaunchedEffect(
+            item.id,
+            isFocused,
+            isBackdropExpanded,
+            trailerPreviewUrl
+        ) {
+            val canPlayTrailer = isBackdropExpanded &&
+                isFocused &&
+                !trailerPreviewUrl.isNullOrBlank() &&
+                lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            if (!canPlayTrailer) {
+                shouldPlayTrailerPreview = false
+                return@LaunchedEffect
+            }
+            shouldPlayTrailerPreview = false
+            delay(TRAILER_PREVIEW_PLAY_DELAY_MS)
+            if (
+                isBackdropExpanded &&
+                isFocused &&
+                !trailerPreviewUrl.isNullOrBlank() &&
+                lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            ) {
+                shouldPlayTrailerPreview = true
+            }
         }
     }
 
@@ -197,9 +227,9 @@ fun ContentCard(
             with(density) { baseCardHeight.roundToPx() }
         }
         val imageUrl = if (focusedPosterBackdropExpandEnabled && isBackdropExpanded) {
-            item.backdropUrl ?: item.poster
+            item.backdropUrl ?: item.displayPosterUrl
         } else {
-            item.poster
+            item.displayPosterUrl
         }
         val imageModel = remember(imageUrl, requestWidthPx, requestHeightPx) {
             ImageRequest.Builder(context)
@@ -327,21 +357,22 @@ fun ContentCard(
                     MonochromePosterPlaceholder()
                 }
 
-                val shouldPlayTrailerPreview = isBackdropExpanded &&
+                val playTrailerPreview = shouldPlayTrailerPreview &&
+                    isBackdropExpanded &&
                     focusedPosterBackdropTrailerEnabled &&
                     isFocused &&
                     trailerPreviewUrl != null
 
                 if (focusedPosterBackdropTrailerEnabled) {
-                    LaunchedEffect(shouldPlayTrailerPreview) {
-                        if (!shouldPlayTrailerPreview) {
+                    LaunchedEffect(playTrailerPreview) {
+                        if (!playTrailerPreview) {
                             trailerFirstFrameRendered = false
                         }
                     }
                 }
 
                 // Only allocate animation state when trailer is actually playing.
-                val trailerCoverAlpha = if (shouldPlayTrailerPreview) {
+                val trailerCoverAlpha = if (playTrailerPreview) {
                     val alpha by animateFloatAsState(
                         targetValue = if (!trailerFirstFrameRendered) 1f else 0f,
                         animationSpec = tween(durationMillis = 250),
@@ -352,7 +383,7 @@ fun ContentCard(
                     0f
                 }
 
-                if (shouldPlayTrailerPreview) {
+                if (playTrailerPreview) {
                     TrailerPlayer(
                         trailerUrl = trailerPreviewUrl,
                         trailerAudioUrl = trailerPreviewAudioUrl,
@@ -369,7 +400,7 @@ fun ContentCard(
                     )
                 }
 
-                if (shouldPlayTrailerPreview && !imageUrl.isNullOrBlank()) {
+                if (playTrailerPreview && !imageUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = imageModel,
                         contentDescription = null,

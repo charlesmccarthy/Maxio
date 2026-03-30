@@ -8,6 +8,7 @@ import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.local.LikedMediaDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.trailer.TrailerService
@@ -30,6 +31,7 @@ class CastDetailViewModel @Inject constructor(
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val trailerService: TrailerService,
+    private val likedMediaDataStore: LikedMediaDataStore,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -48,6 +50,7 @@ class CastDetailViewModel @Inject constructor(
     private val trailerLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val logoNegativeCache = mutableSetOf<String>()
     private val logoLoadingIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    val likedItemStatus = mutableStateMapOf<String, Boolean>()
     var trailerEnabled: Boolean = false
         private set
     var trailerMuted: Boolean = true
@@ -56,6 +59,7 @@ class CastDetailViewModel @Inject constructor(
     init {
         loadPersonDetail()
         observeTrailerPrefs()
+        observeLikedItems()
     }
 
     fun retry() {
@@ -92,6 +96,23 @@ class CastDetailViewModel @Inject constructor(
                     trailerEnabled = enabled
                     trailerMuted = muted
                 }
+        }
+    }
+
+    private fun observeLikedItems() {
+        viewModelScope.launch {
+            likedMediaDataStore.likedItems.collectLatest { items ->
+                likedItemStatus.clear()
+                items.forEach { item ->
+                    likedItemStatus[likedStatusKey(item)] = true
+                }
+            }
+        }
+    }
+
+    fun toggleLiked(item: MetaPreview) {
+        viewModelScope.launch {
+            likedMediaDataStore.toggle(item)
         }
     }
 
@@ -162,3 +183,5 @@ class CastDetailViewModel @Inject constructor(
         }
     }
 }
+
+private fun likedStatusKey(item: MetaPreview): String = "${item.apiType}:${item.id}"

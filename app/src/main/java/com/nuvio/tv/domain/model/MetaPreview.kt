@@ -36,6 +36,9 @@ data class MetaPreview(
     val apiType: String
         get() = type.toApiString(rawType)
 
+    val displayPosterUrl: String?
+        get() = poster ?: rawPosterUrl ?: landscapePoster ?: background
+
     val backdropUrl: String?
-        get() = background ?: landscapePoster ?: poster
+        get() = background ?: landscapePoster ?: poster ?: rawPosterUrl
 }

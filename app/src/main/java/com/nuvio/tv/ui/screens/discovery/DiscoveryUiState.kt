@@ -24,6 +24,7 @@ data class DiscoveryUiState(
     val heroItems: List<MetaPreview> = emptyList(),
     val rows: List<DiscoveryRow> = emptyList(),
     val genres: List<TmdbGenre> = emptyList(),
+    val genreBackdropUrls: Map<Int, String> = emptyMap(),
     val surpriseMe: SurpriseMeState = SurpriseMeState(),
     val isLoading: Boolean = false,
     val error: String? = null,

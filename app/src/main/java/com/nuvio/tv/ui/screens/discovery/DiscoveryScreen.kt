@@ -2,6 +2,7 @@ package com.nuvio.tv.ui.screens.discovery
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,13 +18,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -35,13 +38,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Card
+import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.FilterChip
 import androidx.tv.material3.MaterialTheme
@@ -52,6 +61,7 @@ import com.nuvio.tv.R
 import com.nuvio.tv.data.remote.api.TmdbGenre
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.HeroCarousel
+import com.nuvio.tv.ui.components.MediaPosterOptionsDialog
 import com.nuvio.tv.ui.components.NetflixStyleRow
 import com.nuvio.tv.ui.theme.NuvioColors
 import kotlinx.coroutines.android.awaitFrame
@@ -65,12 +75,51 @@ fun DiscoveryScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val heroFocusRequester = remember { FocusRequester() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val listState = rememberLazyListState()
+    val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     var requestedInitialHeroFocus by rememberSaveable { mutableStateOf(false) }
+    var lastFocusedRowKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedRowIndices by rememberSaveable { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var restoreRowFocusNonce by rememberSaveable { mutableStateOf(0) }
+    var optionsItem by remember { mutableStateOf<MetaPreview?>(null) }
 
-    LaunchedEffect(state.heroItems, requestedInitialHeroFocus) {
-        if (requestedInitialHeroFocus || state.heroItems.isEmpty()) return@LaunchedEffect
+    fun rowKey(row: DiscoveryRow): String = "${state.contentType}:${row.title}"
+
+    val rowIndicesByKey = remember(state.contentType, state.heroItems.size, state.rows) {
+        val heroOffset = if (state.heroItems.isNotEmpty()) 1 else 0
+        state.rows.mapIndexed { index, row -> rowKey(row) to (index + heroOffset) }.toMap()
+    }
+    val hasSavedRowFocusTarget = lastFocusedRowKey != null && rowIndicesByKey.containsKey(lastFocusedRowKey)
+
+    DisposableEffect(lifecycleOwner, lastFocusedRowKey, state.rows) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME &&
+                !lastFocusedRowKey.isNullOrBlank() &&
+                state.rows.isNotEmpty()
+            ) {
+                restoreRowFocusNonce += 1
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(state.heroItems, requestedInitialHeroFocus, hasSavedRowFocusTarget) {
+        if (requestedInitialHeroFocus || state.heroItems.isEmpty() || hasSavedRowFocusTarget) return@LaunchedEffect
         repeat(2) { awaitFrame() }
         runCatching { heroFocusRequester.requestFocus() }
+        requestedInitialHeroFocus = true
+    }
+
+    LaunchedEffect(restoreRowFocusNonce, rowIndicesByKey, lastFocusedRowKey) {
+        val targetKey = lastFocusedRowKey ?: return@LaunchedEffect
+        val rowIndex = rowIndicesByKey[targetKey] ?: return@LaunchedEffect
+        listState.scrollToItem(rowIndex)
+        repeat(2) { awaitFrame() }
+        rowFocusRequesters.getOrPut(targetKey) { FocusRequester() }.requestFocus()
         requestedInitialHeroFocus = true
     }
 
@@ -130,6 +179,7 @@ fun DiscoveryScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 48.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
@@ -149,6 +199,7 @@ fun DiscoveryScreen(
                             trailerMuted = viewModel.trailerMuted,
                             onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
                             onItemFocus = { item -> viewModel.requestLogo(item) },
+                            onFocused = { lastFocusedRowKey = null },
                             focusRequester = heroFocusRequester,
                             modifier = Modifier.padding(horizontal = 48.dp)
                         )
@@ -157,6 +208,7 @@ fun DiscoveryScreen(
 
                 // Content rows
                 items(state.rows, key = { it.title }) { row ->
+                    val rowKey = rowKey(row)
                     NetflixStyleRow(
                         title = row.title,
                         items = row.items,
@@ -164,7 +216,7 @@ fun DiscoveryScreen(
                             viewModel.storeActiveTrailer(item)
                             viewModel.onEvent(DiscoveryEvent.OnItemClick(item, onNavigateToDetail))
                         },
-                        onItemLongPress = { item -> viewModel.toggleLiked(item) },
+                        onItemLongPress = { item -> optionsItem = item },
                         isItemLiked = { item -> viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true },
                         trailerPreviewUrls = viewModel.trailerPreviewUrls,
                         trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
@@ -173,6 +225,17 @@ fun DiscoveryScreen(
                         trailerMuted = viewModel.trailerMuted,
                         onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
                         onItemFocus = { item -> viewModel.requestLogo(item) },
+                        focusRequester = rowFocusRequesters.getOrPut(rowKey) { FocusRequester() },
+                        initialSelectedIndex = selectedRowIndices[rowKey] ?: 0,
+                        onSelectedIndexChange = { selectedIndex ->
+                            val currentIndex = selectedRowIndices[rowKey]
+                            if (currentIndex != selectedIndex) {
+                                selectedRowIndices = selectedRowIndices + (rowKey to selectedIndex)
+                            }
+                        },
+                        onRowFocused = {
+                            lastFocusedRowKey = rowKey
+                        },
                         onTrailerProgressChanged = { itemId, positionMs ->
                             viewModel.onTrailerProgressChanged(itemId, positionMs)
                         }
@@ -192,6 +255,7 @@ fun DiscoveryScreen(
                     item(key = "genres") {
                         GenreCardRow(
                             genres = state.genres,
+                            backdropUrls = state.genreBackdropUrls,
                             onGenreClick = { genre ->
                                 onNavigateToDiscoveryBrowse(
                                     "genre",
@@ -228,6 +292,23 @@ fun DiscoveryScreen(
             }
         }
     }
+
+    optionsItem?.let { item ->
+        MediaPosterOptionsDialog(
+            title = item.name,
+            isLiked = viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true,
+            onDismiss = { optionsItem = null },
+            onDetails = {
+                viewModel.storeActiveTrailer(item)
+                viewModel.onEvent(DiscoveryEvent.OnItemClick(item, onNavigateToDetail))
+                optionsItem = null
+            },
+            onToggleLike = {
+                viewModel.toggleLiked(item)
+                optionsItem = null
+            }
+        )
+    }
 }
 
 private val GENRE_COLORS = listOf(
@@ -255,6 +336,7 @@ private val GENRE_COLORS = listOf(
 @Composable
 private fun GenreCardRow(
     genres: List<TmdbGenre>,
+    backdropUrls: Map<Int, String>,
     onGenreClick: (TmdbGenre) -> Unit
 ) {
     LazyRow(
@@ -267,6 +349,7 @@ private fun GenreCardRow(
             GenreCard(
                 name = genre.name,
                 color = color,
+                backdropUrl = backdropUrls[genre.id],
                 onClick = { onGenreClick(genre) }
             )
         }
@@ -278,40 +361,106 @@ private fun GenreCardRow(
 private fun GenreCard(
     name: String,
     color: Color,
+    backdropUrl: String?,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    Box(
+    val shape = RoundedCornerShape(18.dp)
+    Card(
+        onClick = onClick,
         modifier = Modifier
-            .width(160.dp)
-            .height(80.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(color.copy(alpha = 0.8f), color.copy(alpha = 0.4f))
-                )
+            .width(220.dp)
+            .height(124.dp)
+            .onFocusChanged { isFocused = it.hasFocus || it.isFocused },
+        shape = CardDefaults.shape(shape = shape),
+        colors = CardDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent
+        ),
+        border = CardDefaults.border(
+            border = Border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+                shape = shape
+            ),
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, Color.White),
+                shape = shape
             )
-            .then(
-                if (isFocused) Modifier.background(color.copy(alpha = 0.95f), RoundedCornerShape(12.dp))
-                else Modifier
-            )
-            .onFocusChanged { isFocused = it.isFocused },
-        contentAlignment = Alignment.Center
+        ),
+        scale = CardDefaults.scale(
+            focusedScale = 1.04f
+        )
     ) {
-        Button(
-            onClick = onClick,
-            modifier = Modifier.fillMaxSize(),
-            shape = ButtonDefaults.shape(shape = RoundedCornerShape(12.dp)),
-            colors = ButtonDefaults.colors(
-                containerColor = Color.Transparent,
-                focusedContainerColor = color
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(shape)
+                .background(
+                    if (backdropUrl.isNullOrBlank()) {
+                        Brush.linearGradient(
+                            colors = listOf(
+                                color.copy(alpha = 0.92f),
+                                color.copy(alpha = 0.56f),
+                                Color.Black.copy(alpha = 0.88f)
+                            )
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            colors = listOf(Color.Black, Color.Black)
+                        )
+                    }
+                )
         ) {
+            if (!backdropUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(backdropUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                color.copy(alpha = if (isFocused) 0.82f else 0.70f),
+                                color.copy(alpha = 0.26f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.08f),
+                                Color.Black.copy(alpha = 0.28f),
+                                Color.Black.copy(alpha = 0.86f)
+                            )
+                        )
+                    )
+            )
+
             Text(
                 text = name,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
             )
         }
     }

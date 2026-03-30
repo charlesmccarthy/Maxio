@@ -1,20 +1,24 @@
 package com.nuvio.tv.data.mapper
 
+import com.nuvio.tv.core.util.normalizeImageUrl
 import com.nuvio.tv.data.remote.dto.MetaPreviewDto
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PosterShape
 
 fun MetaPreviewDto.toDomain(): MetaPreview {
+    val normalizedPoster = poster.normalizeImageUrl() ?: rawPosterUrl.normalizeImageUrl()
+    val normalizedLandscapePoster = landscapePoster.normalizeImageUrl()
+    val normalizedBackground = background.normalizeImageUrl()
     return MetaPreview(
         id = id,
         type = ContentType.fromString(type),
         rawType = type,
         name = name,
-        poster = poster,
+        poster = normalizedPoster ?: normalizedLandscapePoster ?: normalizedBackground,
         posterShape = PosterShape.fromString(posterShape),
-        background = background,
-        logo = logo,
+        background = normalizedBackground ?: normalizedLandscapePoster ?: normalizedPoster,
+        logo = logo.normalizeImageUrl(),
         description = description,
         releaseInfo = releaseInfo,
         imdbRating = imdbRating?.toFloatOrNull(),
@@ -25,8 +29,8 @@ fun MetaPreviewDto.toDomain(): MetaPreview {
         country = country,
         imdbId = imdbId,
         slug = slug,
-        landscapePoster = landscapePoster,
-        rawPosterUrl = rawPosterUrl,
+        landscapePoster = normalizedLandscapePoster ?: normalizedBackground ?: normalizedPoster,
+        rawPosterUrl = rawPosterUrl.normalizeImageUrl(),
         director = coerceStringList(director),
         writer = coerceStringList(writer).ifEmpty { coerceStringList(writers) },
         links = links?.mapNotNull { it.toDomain() } ?: emptyList(),
