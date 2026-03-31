@@ -186,6 +186,16 @@ fun NuvioNavHost(
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 },
+                onNavigateToTmdbEntityBrowse = { entityKind, entityId, entityName, sourceType ->
+                    navController.navigate(
+                        Screen.TmdbEntityBrowse.createRoute(
+                            entityKind = entityKind,
+                            entityId = entityId,
+                            entityName = entityName,
+                            sourceType = sourceType
+                        )
+                    )
+                },
                 onContinueWatchingClick = { item ->
                     navController.navigate(createContinueWatchingRoute(item))
                 },

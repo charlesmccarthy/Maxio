@@ -53,6 +53,58 @@ private val DECADES = listOf(
     "2020" to "2020s"
 )
 
+private const val MAX_DISCOVERY_GENRE_ROWS = 14
+
+private val MOVIE_DISCOVERY_GENRE_PRIORITY = listOf(
+    "Action",
+    "Adventure",
+    "Animation",
+    "Comedy",
+    "Crime",
+    "Documentary",
+    "Drama",
+    "Family",
+    "Fantasy",
+    "History",
+    "Horror",
+    "Mystery",
+    "Romance",
+    "Science Fiction",
+    "Thriller",
+    "War",
+    "Western"
+)
+
+private val TV_DISCOVERY_GENRE_PRIORITY = listOf(
+    "Action & Adventure",
+    "Animation",
+    "Comedy",
+    "Crime",
+    "Documentary",
+    "Drama",
+    "Family",
+    "Kids",
+    "Mystery",
+    "News",
+    "Reality",
+    "Sci-Fi & Fantasy",
+    "Soap",
+    "Talk",
+    "War & Politics",
+    "Western"
+)
+
+private data class DiscoveryRowSpec(
+    val title: String,
+    val order: Int,
+    val fetcher: suspend () -> List<MetaPreview>
+)
+
+private data class DiscoveryRowResult(
+    val order: Int,
+    val row: DiscoveryRow?
+)
+
 @HiltViewModel
 class DiscoveryViewModel @Inject constructor(
     private val tmdbApi: TmdbApi,
@@ -266,61 +318,67 @@ class DiscoveryViewModel @Inject constructor(
                 val language = tmdbSettingsDataStore.settings.first().language.takeIf { it.isNotBlank() }
                 val isMovie = contentType == "movie"
 
-                val rows = mutableListOf<DiscoveryRow>()
-
                 // Fetch all rows in parallel
                 coroutineScope {
-                    val trendingDeferred = async { fetchTrending(contentType, language) }
-                    val topRatedDeferred = async { fetchTopRated(isMovie, language) }
-                    val newReleasesDeferred = async { fetchNewReleases(isMovie, language) }
-                    val hiddenGemsDeferred = async { fetchHiddenGems(isMovie, language) }
                     val genresDeferred = async { fetchGenres(isMovie, language) }
-
-                    // Pick 2 random decades for rows
                     val shuffledDecades = DECADES.shuffled().take(2)
-                    val decade1Deferred = async { fetchDecade(isMovie, shuffledDecades[0], language) }
-                    val decade2Deferred = async { fetchDecade(isMovie, shuffledDecades[1], language) }
-
-                    // Trakt personalized rows (if authenticated)
                     val traktAuthenticated = traktAuthDataStore.isAuthenticated.first()
-                    val becauseYouWatchedDeferred = if (traktAuthenticated) {
-                        async { fetchBecauseYouWatched(isMovie, language) }
+                    val genres = genresDeferred.await()
+                    val rowSpecs = buildCuratedRowSpecs(
+                        contentType = contentType,
+                        isMovie = isMovie,
+                        language = language,
+                        shuffledDecades = shuffledDecades
+                    ) + buildGenreRowSpecs(
+                        genres = genres,
+                        isMovie = isMovie,
+                        language = language
+                    )
+                    val rowResults = rowSpecs.map { spec ->
+                        async {
+                            val items = spec.fetcher()
+                            DiscoveryRowResult(
+                                order = spec.order,
+                                row = items.takeIf { it.isNotEmpty() }?.let { DiscoveryRow(spec.title, it) }
+                            )
+                        }
+                    }
+
+                    val becauseYouWatchedDeferred = if (traktAuthenticated) async {
+                        fetchBecauseYouWatched(isMovie, language)
                     } else null
-                    val watchlistDeferred = if (traktAuthenticated) {
-                        async { fetchWatchlist(isMovie, language) }
+                    val watchlistDeferred = if (traktAuthenticated) async {
+                        fetchWatchlist(isMovie, language)
                     } else null
 
-                    val trending = trendingDeferred.await()
-                    val topRated = topRatedDeferred.await()
-                    val newReleases = newReleasesDeferred.await()
-                    val hiddenGems = hiddenGemsDeferred.await()
-                    val genres = genresDeferred.await()
                     val genreBackdropUrlsDeferred = async { fetchGenreBackdropUrls(isMovie, genres, language) }
-                    val decade1 = decade1Deferred.await()
-                    val decade2 = decade2Deferred.await()
                     val becauseYouWatched = becauseYouWatchedDeferred?.await()
                     val watchlist = watchlistDeferred?.await()
                     val genreBackdropUrls = genreBackdropUrlsDeferred.await()
-
-                    if (trending.isNotEmpty()) rows.add(DiscoveryRow("Trending This Week", trending))
-                    if (topRated.isNotEmpty()) rows.add(DiscoveryRow("Top Rated", topRated))
-                    if (newReleases.isNotEmpty()) rows.add(DiscoveryRow("New Releases", newReleases))
-                    if (hiddenGems.isNotEmpty()) rows.add(DiscoveryRow("Hidden Gems", hiddenGems))
+                    val allRowResults = rowResults.awaitAll().toMutableList()
 
                     if (becauseYouWatched != null && becauseYouWatched.second.isNotEmpty()) {
-                        rows.add(DiscoveryRow("Because You Watched \"${becauseYouWatched.first}\"", becauseYouWatched.second))
+                        allRowResults += DiscoveryRowResult(
+                            order = 6,
+                            row = DiscoveryRow(
+                                "Because You Watched \"${becauseYouWatched.first}\"",
+                                becauseYouWatched.second
+                            )
+                        )
                     }
                     if (watchlist != null && watchlist.isNotEmpty()) {
-                        rows.add(DiscoveryRow("From Your Watchlist", watchlist))
+                        allRowResults += DiscoveryRowResult(
+                            order = 7,
+                            row = DiscoveryRow("From Your Watchlist", watchlist)
+                        )
                     }
 
-                    if (decade1.isNotEmpty()) rows.add(DiscoveryRow("Best of the ${shuffledDecades[0].second}", decade1))
-                    if (decade2.isNotEmpty()) rows.add(DiscoveryRow("Best of the ${shuffledDecades[1].second}", decade2))
+                    val rows = allRowResults
+                        .sortedBy { it.order }
+                        .mapNotNull { it.row }
 
-                    // Shuffle the content rows (not the section order of curated vs decade)
-                    val shuffledRows = rows.shuffled()
-                    val heroItems = trending.take(10)
-                    curatedRows = shuffledRows
+                    val heroItems = rows.firstOrNull()?.items?.take(10).orEmpty()
+                    curatedRows = rows
                     _uiState.update { it.copy(heroItems = heroItems) }
                     publishRows(
                         genres = genres,
@@ -514,11 +572,15 @@ class DiscoveryViewModel @Inject constructor(
         }
     }
 
-    private suspend fun fetchTrending(mediaType: String, language: String?): List<MetaPreview> {
+    private suspend fun fetchTrending(
+        mediaType: String,
+        language: String?,
+        timeWindow: String = "week"
+    ): List<MetaPreview> {
         return try {
             val response = tmdbApi.getTrending(
                 mediaType = mediaType,
-                timeWindow = "week",
+                timeWindow = timeWindow,
                 apiKey = TMDB_API_KEY,
                 language = language
             )
@@ -527,6 +589,18 @@ class DiscoveryViewModel @Inject constructor(
             Log.w(TAG, "Trending fetch failed", e)
             emptyList()
         }
+    }
+
+    private suspend fun fetchPopular(isMovie: Boolean, language: String?): List<MetaPreview> {
+        val today = LocalDate.now().toString()
+        return fetchDiscoverList(
+            isMovie = isMovie,
+            language = language,
+            sortBy = "popularity.desc",
+            releaseDateLte = if (isMovie) today else null,
+            firstAirDateLte = if (isMovie) null else today,
+            voteCountGte = if (isMovie) 250 else 120
+        )
     }
 
     private suspend fun fetchTopRated(isMovie: Boolean, language: String?): List<MetaPreview> {
@@ -552,6 +626,16 @@ class DiscoveryViewModel @Inject constructor(
             Log.w(TAG, "Top Rated fetch failed", e)
             emptyList()
         }
+    }
+
+    private suspend fun fetchCriticallyAcclaimed(isMovie: Boolean, language: String?): List<MetaPreview> {
+        return fetchDiscoverList(
+            isMovie = isMovie,
+            language = language,
+            sortBy = "vote_average.desc",
+            voteCountGte = if (isMovie) 1500 else 750,
+            voteAverageGte = if (isMovie) 7.8 else 7.8
+        )
     }
 
     private suspend fun fetchNewReleases(isMovie: Boolean, language: String?): List<MetaPreview> {
@@ -582,6 +666,34 @@ class DiscoveryViewModel @Inject constructor(
         }
     }
 
+    private suspend fun fetchRecentHits(isMovie: Boolean, language: String?): List<MetaPreview> {
+        val today = LocalDate.now()
+        val since = today.minusYears(3).toString()
+        return fetchDiscoverList(
+            isMovie = isMovie,
+            language = language,
+            sortBy = "popularity.desc",
+            primaryReleaseDateGte = if (isMovie) since else null,
+            primaryReleaseDateLte = if (isMovie) today.toString() else null,
+            firstAirDateGte = if (isMovie) null else since,
+            firstAirDateLte = if (isMovie) null else today.toString(),
+            voteCountGte = if (isMovie) 300 else 150
+        )
+    }
+
+    private suspend fun fetchCrowdPleasers(isMovie: Boolean, language: String?): List<MetaPreview> {
+        val today = LocalDate.now().toString()
+        return fetchDiscoverList(
+            isMovie = isMovie,
+            language = language,
+            sortBy = "popularity.desc",
+            releaseDateLte = if (isMovie) today else null,
+            firstAirDateLte = if (isMovie) null else today,
+            voteCountGte = if (isMovie) 1500 else 700,
+            voteAverageGte = 7.0
+        )
+    }
+
     private suspend fun fetchHiddenGems(isMovie: Boolean, language: String?): List<MetaPreview> {
         return try {
             val mediaType = if (isMovie) "movie" else "series"
@@ -609,6 +721,23 @@ class DiscoveryViewModel @Inject constructor(
             Log.w(TAG, "Hidden Gems fetch failed", e)
             emptyList()
         }
+    }
+
+    private suspend fun fetchGenreHighlights(
+        genre: TmdbGenre,
+        isMovie: Boolean,
+        language: String?
+    ): List<MetaPreview> {
+        val today = LocalDate.now().toString()
+        return fetchDiscoverList(
+            isMovie = isMovie,
+            language = language,
+            sortBy = "popularity.desc",
+            withGenres = genre.id.toString(),
+            releaseDateLte = if (isMovie) today else null,
+            firstAirDateLte = if (isMovie) null else today,
+            voteCountGte = if (isMovie) 100 else 50
+        )
     }
 
     private suspend fun fetchDecade(isMovie: Boolean, decade: Pair<String, String>, language: String?): List<MetaPreview> {
@@ -653,6 +782,193 @@ class DiscoveryViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "Genre fetch failed", e)
             emptyList()
+        }
+    }
+
+    private suspend fun fetchDiscoverList(
+        isMovie: Boolean,
+        language: String?,
+        sortBy: String? = null,
+        page: Int = 1,
+        releaseDateLte: String? = null,
+        releaseDateGte: String? = null,
+        primaryReleaseDateGte: String? = null,
+        primaryReleaseDateLte: String? = null,
+        firstAirDateLte: String? = null,
+        firstAirDateGte: String? = null,
+        voteCountGte: Int? = null,
+        voteAverageGte: Double? = null,
+        withGenres: String? = null
+    ): List<MetaPreview> {
+        return try {
+            val mediaType = if (isMovie) "movie" else "series"
+            val response = if (isMovie) {
+                tmdbApi.discoverMovies(
+                    apiKey = TMDB_API_KEY,
+                    language = language,
+                    page = page,
+                    sortBy = sortBy,
+                    releaseDateLte = releaseDateLte,
+                    releaseDateGte = releaseDateGte,
+                    primaryReleaseDateGte = primaryReleaseDateGte,
+                    primaryReleaseDateLte = primaryReleaseDateLte,
+                    voteCountGte = voteCountGte,
+                    voteAverageGte = voteAverageGte,
+                    withGenres = withGenres
+                )
+            } else {
+                tmdbApi.discoverTv(
+                    apiKey = TMDB_API_KEY,
+                    language = language,
+                    page = page,
+                    sortBy = sortBy,
+                    firstAirDateLte = firstAirDateLte,
+                    firstAirDateGte = firstAirDateGte,
+                    voteCountGte = voteCountGte,
+                    voteAverageGte = voteAverageGte,
+                    withGenres = withGenres
+                )
+            }
+            response.body()?.results.orEmpty().map { it.toMetaPreview(mediaType) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Discover fetch failed for sort=$sortBy genres=$withGenres", e)
+            emptyList()
+        }
+    }
+
+    private fun buildCuratedRowSpecs(
+        contentType: String,
+        isMovie: Boolean,
+        language: String?,
+        shuffledDecades: List<Pair<String, String>>
+    ): List<DiscoveryRowSpec> {
+        val typeLabelPlural = if (isMovie) "Movies" else "Shows"
+        val newReleaseTitle = if (isMovie) "New Releases" else "New & Returning Shows"
+        return buildList {
+            add(
+                DiscoveryRowSpec(
+                    title = "Trending Today",
+                    order = 0,
+                    fetcher = { fetchTrending(contentType, language, timeWindow = "day") }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = "Trending This Week",
+                    order = 1,
+                    fetcher = { fetchTrending(contentType, language, timeWindow = "week") }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = "Popular $typeLabelPlural",
+                    order = 2,
+                    fetcher = { fetchPopular(isMovie, language) }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = "Top Rated",
+                    order = 3,
+                    fetcher = { fetchTopRated(isMovie, language) }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = newReleaseTitle,
+                    order = 4,
+                    fetcher = { fetchNewReleases(isMovie, language) }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = if (isMovie) "Recent Hits" else "Recent Hit Shows",
+                    order = 5,
+                    fetcher = { fetchRecentHits(isMovie, language) }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = if (isMovie) "Crowd Pleasers" else "Binge-Worthy",
+                    order = 8,
+                    fetcher = { fetchCrowdPleasers(isMovie, language) }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = "Hidden Gems",
+                    order = 9,
+                    fetcher = { fetchHiddenGems(isMovie, language) }
+                )
+            )
+            add(
+                DiscoveryRowSpec(
+                    title = "Critically Acclaimed",
+                    order = 10,
+                    fetcher = { fetchCriticallyAcclaimed(isMovie, language) }
+                )
+            )
+            shuffledDecades.getOrNull(0)?.let { decade ->
+                add(
+                    DiscoveryRowSpec(
+                        title = "Best of the ${decade.second}",
+                        order = 11,
+                        fetcher = { fetchDecade(isMovie, decade, language) }
+                    )
+                )
+            }
+            shuffledDecades.getOrNull(1)?.let { decade ->
+                add(
+                    DiscoveryRowSpec(
+                        title = "Best of the ${decade.second}",
+                        order = 12,
+                        fetcher = { fetchDecade(isMovie, decade, language) }
+                    )
+                )
+            }
+        }
+    }
+
+    private fun buildGenreRowSpecs(
+        genres: List<TmdbGenre>,
+        isMovie: Boolean,
+        language: String?
+    ): List<DiscoveryRowSpec> {
+        val prioritizedNames = if (isMovie) {
+            MOVIE_DISCOVERY_GENRE_PRIORITY
+        } else {
+            TV_DISCOVERY_GENRE_PRIORITY
+        }
+        val genresByLowerName = genres.associateBy { it.name.trim().lowercase() }
+        val prioritizedGenres = prioritizedNames.mapNotNull { name ->
+            genresByLowerName[name.lowercase()]
+        }
+        val remainingGenres = genres
+            .filterNot { genre -> prioritizedGenres.any { it.id == genre.id } }
+            .sortedBy { it.name.lowercase() }
+        val selectedGenres = (prioritizedGenres + remainingGenres)
+            .distinctBy { it.id }
+            .take(MAX_DISCOVERY_GENRE_ROWS)
+
+        return selectedGenres.mapIndexed { index, genre ->
+            DiscoveryRowSpec(
+                title = genreDiscoveryTitle(genre.name, isMovie),
+                order = 20 + index,
+                fetcher = { fetchGenreHighlights(genre, isMovie, language) }
+            )
+        }
+    }
+
+    private fun genreDiscoveryTitle(genreName: String, isMovie: Boolean): String {
+        val normalizedName = when (genreName) {
+            "Science Fiction" -> "Sci-Fi"
+            "Sci-Fi & Fantasy" -> "Sci-Fi & Fantasy"
+            else -> genreName
+        }
+        return if (isMovie) {
+            "$normalizedName Movies"
+        } else {
+            "$normalizedName Shows"
         }
     }
 

@@ -511,6 +511,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     }
 
     schedulePosterStatusReconcilePipeline(displayRows)
+    refreshFeaturedStudiosPipeline(displayRows, baseHeroItems)
 }
 
 private fun stableHeroSortKey(

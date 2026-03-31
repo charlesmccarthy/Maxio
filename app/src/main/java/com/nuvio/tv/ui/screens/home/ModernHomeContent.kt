@@ -123,6 +123,8 @@ fun ModernHomeContent(
     onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = {},
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit = {},
     showContinueWatchingManualPlayOption: Boolean = false,
+    featuredStudios: List<FeaturedStudio> = emptyList(),
+    onStudioClick: (FeaturedStudio) -> Unit = {},
     onRequestTrailerPreview: (String, String, String?, String) -> Unit,
     onLoadMoreCatalog: (String, String, String) -> Unit,
     onRemoveContinueWatching: (String, Int?, Int?, Boolean) -> Unit,
@@ -883,6 +885,15 @@ fun ModernHomeContent(
                         onBackdropInteraction = remember(Unit) { { expansionInteractionNonce++ } },
                         onExpandedCatalogFocusKeyChange = remember(Unit) { { expandedCatalogFocusKey = it } }
                     )
+                }
+
+                if (featuredStudios.isNotEmpty()) {
+                    item(key = "featured_studios", contentType = "featured_studios") {
+                        FeaturedStudiosSection(
+                            studios = featuredStudios,
+                            onStudioClick = onStudioClick
+                        )
+                    }
                 }
             }
         }

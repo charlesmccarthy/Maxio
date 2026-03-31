@@ -153,6 +153,8 @@ class HomeViewModel @Inject constructor(
     internal var likedItems: List<MetaPreview> = emptyList()
     internal var likedRecommendationRows: List<CatalogRow> = emptyList()
     internal var likedRecommendationJob: Job? = null
+    internal var featuredStudiosJob: Job? = null
+    internal var featuredStudiosSignature: String? = null
     internal var libraryTabsObserverJob: Job? = null
     internal var activePosterListPickerInput: LibraryEntryInput? = null
     internal var posterStatusObservationEnabled: Boolean = false

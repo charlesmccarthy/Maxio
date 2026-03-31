@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,6 +80,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.ui.util.formatAddonTypeLabel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.android.awaitFrame
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
 
@@ -103,15 +105,28 @@ fun LibraryScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var expandedPicker by remember { mutableStateOf<String?>(null) }
     val primaryFocusRequester = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+    val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     var pendingPrimaryFocus by remember { mutableStateOf(true) }
-    var lastFocusedPosterKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastFocusedRowKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedRowIndices by rememberSaveable { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var restoreRowFocusNonce by rememberSaveable { mutableStateOf(0) }
     val posterCardStyle = PosterCardDefaults.Style
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    val rowIndicesByKey = remember(uiState.sourceMode, uiState.groupedRows) {
+        val baseOffset = 2 + if (uiState.sourceMode == LibrarySourceMode.TRAKT) 1 else 0
+        uiState.groupedRows.mapIndexed { index, group -> group.key to (index + baseOffset) }.toMap()
+    }
+    val hasSavedRowFocusTarget = lastFocusedRowKey != null && rowIndicesByKey.containsKey(lastFocusedRowKey)
+
+    DisposableEffect(lifecycleOwner, lastFocusedRowKey, uiState.groupedRows) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.onScreenEntered()
+                if (!lastFocusedRowKey.isNullOrBlank() && uiState.groupedRows.isNotEmpty()) {
+                    restoreRowFocusNonce += 1
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -124,8 +139,8 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(uiState.isLoading, uiState.sourceMode, uiState.listTabs.size) {
-        if (!uiState.isLoading && pendingPrimaryFocus) {
+    LaunchedEffect(uiState.isLoading, uiState.sourceMode, uiState.listTabs.size, hasSavedRowFocusTarget) {
+        if (!uiState.isLoading && pendingPrimaryFocus && !hasSavedRowFocusTarget) {
             var focused = runCatching { primaryFocusRequester.requestFocus() }.isSuccess
             if (!focused) {
                 delay(16)
@@ -133,6 +148,15 @@ fun LibraryScreen(
             }
             pendingPrimaryFocus = false
         }
+    }
+
+    LaunchedEffect(restoreRowFocusNonce, rowIndicesByKey, lastFocusedRowKey) {
+        val targetKey = lastFocusedRowKey ?: return@LaunchedEffect
+        val rowIndex = rowIndicesByKey[targetKey] ?: return@LaunchedEffect
+        listState.scrollToItem(rowIndex)
+        repeat(2) { awaitFrame() }
+        runCatching { rowFocusRequesters.getOrPut(targetKey) { FocusRequester() }.requestFocus() }
+        pendingPrimaryFocus = false
     }
 
     if (uiState.isLoading) {
@@ -171,6 +195,7 @@ fun LibraryScreen(
     val groupedRows = uiState.groupedRows
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
@@ -275,13 +300,13 @@ fun LibraryScreen(
             }
         }
 
-        items(groupedRows, key = { it.title }) { group ->
+        items(groupedRows, key = { it.key }) { group ->
             NetflixStyleRow(
                 title = group.title,
+                subtitle = group.subtitle,
                 items = group.items.map { it.toMetaPreview() },
                 onItemClick = { item ->
                     viewModel.storeActiveTrailer(item)
-                    lastFocusedPosterKey = "${item.rawType}:${item.id}"
                     val entry = group.items.firstOrNull { it.id == item.id }
                     onNavigateToDetail(item.id, item.rawType, entry?.addonBaseUrl)
                 },
@@ -293,6 +318,17 @@ fun LibraryScreen(
                 trailerMuted = viewModel.trailerMuted,
                 onRequestTrailerPreview = { item -> viewModel.requestTrailerPreview(item) },
                 onItemFocus = { item -> viewModel.requestLogo(item) },
+                focusRequester = rowFocusRequesters.getOrPut(group.key) { FocusRequester() },
+                initialSelectedIndex = selectedRowIndices[group.key] ?: 0,
+                onSelectedIndexChange = { selectedIndex ->
+                    val currentIndex = selectedRowIndices[group.key]
+                    if (currentIndex != selectedIndex) {
+                        selectedRowIndices = selectedRowIndices + (group.key to selectedIndex)
+                    }
+                },
+                onRowFocused = {
+                    lastFocusedRowKey = group.key
+                },
                 onTrailerProgressChanged = { itemId, positionMs ->
                     viewModel.onTrailerProgressChanged(itemId, positionMs)
                 }

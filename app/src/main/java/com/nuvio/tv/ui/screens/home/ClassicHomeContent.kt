@@ -60,6 +60,8 @@ fun ClassicHomeContent(
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit = {},
     showContinueWatchingManualPlayOption: Boolean = false,
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit,
+    featuredStudios: List<FeaturedStudio> = emptyList(),
+    onStudioClick: (FeaturedStudio) -> Unit = {},
     onRemoveContinueWatching: (String, Int?, Int?, Boolean) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean = { false },
     isCatalogItemLiked: (MetaPreview) -> Boolean = { false },
@@ -246,6 +248,15 @@ fun ClassicHomeContent(
                         currentFocusSnapshot.rowIndex = -1
                         currentFocusSnapshot.itemIndex = itemIndex
                     }
+                )
+            }
+        }
+
+        if (featuredStudios.isNotEmpty()) {
+            item(key = "featured_studios", contentType = "featured_studios") {
+                FeaturedStudiosSection(
+                    studios = featuredStudios,
+                    onStudioClick = onStudioClick
                 )
             }
         }

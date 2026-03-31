@@ -66,6 +66,7 @@ private const val HOME_STARTUP_CW_GATE_TIMEOUT_MS = 5_000L
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     onNavigateToDetail: (String, String, String) -> Unit,
+    onNavigateToTmdbEntityBrowse: (String, Int, String, String) -> Unit = { _, _, _, _ -> },
     onContinueWatchingClick: (ContinueWatchingItem) -> Unit = { item ->
         onNavigateToDetail(
             when (item) {
@@ -228,6 +229,7 @@ fun HomeScreen(
                                 onContinueWatchingPlayManually = onContinueWatchingPlayManually,
                                 showContinueWatchingManualPlayOption = effectiveAutoplayEnabled,
                                 onNavigateToCatalogSeeAll = onNavigateToCatalogSeeAll,
+                                onNavigateToTmdbEntityBrowse = onNavigateToTmdbEntityBrowse,
                                 isCatalogItemWatched = isCatalogItemWatched,
                                 isCatalogItemLiked = { item ->
                                     viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true
@@ -245,6 +247,7 @@ fun HomeScreen(
                                 onContinueWatchingPlayManually = onContinueWatchingPlayManually,
                                 showContinueWatchingManualPlayOption = effectiveAutoplayEnabled,
                                 onNavigateToCatalogSeeAll = onNavigateToCatalogSeeAll,
+                                onNavigateToTmdbEntityBrowse = onNavigateToTmdbEntityBrowse,
                                 isCatalogItemWatched = isCatalogItemWatched,
                                 onCatalogItemLongPress = onCatalogItemLongPress
                             )
@@ -257,6 +260,7 @@ fun HomeScreen(
                                 onContinueWatchingStartFromBeginning = onContinueWatchingStartFromBeginning,
                                 onContinueWatchingPlayManually = onContinueWatchingPlayManually,
                                 showContinueWatchingManualPlayOption = effectiveAutoplayEnabled,
+                                onNavigateToTmdbEntityBrowse = onNavigateToTmdbEntityBrowse,
                                 isCatalogItemWatched = isCatalogItemWatched,
                                 onCatalogItemLongPress = onCatalogItemLongPress
                             )
@@ -361,6 +365,7 @@ private fun ClassicHomeRoute(
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit,
     showContinueWatchingManualPlayOption: Boolean,
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit,
+    onNavigateToTmdbEntityBrowse: (String, Int, String, String) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean,
     isCatalogItemLiked: (MetaPreview) -> Boolean,
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
@@ -380,6 +385,15 @@ private fun ClassicHomeRoute(
         onContinueWatchingPlayManually = onContinueWatchingPlayManually,
         showContinueWatchingManualPlayOption = showContinueWatchingManualPlayOption,
         onNavigateToCatalogSeeAll = onNavigateToCatalogSeeAll,
+        featuredStudios = uiState.featuredStudios,
+        onStudioClick = { studio ->
+            onNavigateToTmdbEntityBrowse(
+                studio.entityKind,
+                studio.tmdbId,
+                studio.name,
+                studio.sourceType
+            )
+        },
         onRemoveContinueWatching = { contentId, season, episode, isNextUp ->
             viewModel.onEvent(HomeEvent.OnRemoveContinueWatching(contentId, season, episode, isNextUp))
         },
@@ -415,6 +429,7 @@ private fun GridHomeRoute(
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit,
     showContinueWatchingManualPlayOption: Boolean,
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit,
+    onNavigateToTmdbEntityBrowse: (String, Int, String, String) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean,
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
 ) {
@@ -433,6 +448,15 @@ private fun GridHomeRoute(
         onContinueWatchingPlayManually = onContinueWatchingPlayManually,
         showContinueWatchingManualPlayOption = showContinueWatchingManualPlayOption,
         onNavigateToCatalogSeeAll = onNavigateToCatalogSeeAll,
+        featuredStudios = uiState.featuredStudios,
+        onStudioClick = { studio ->
+            onNavigateToTmdbEntityBrowse(
+                studio.entityKind,
+                studio.tmdbId,
+                studio.name,
+                studio.sourceType
+            )
+        },
         onRemoveContinueWatching = { contentId, season, episode, isNextUp ->
             viewModel.onEvent(HomeEvent.OnRemoveContinueWatching(contentId, season, episode, isNextUp))
         },
@@ -459,6 +483,7 @@ private fun ModernHomeRoute(
     onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit,
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit,
     showContinueWatchingManualPlayOption: Boolean,
+    onNavigateToTmdbEntityBrowse: (String, Int, String, String) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean,
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
 ) {
@@ -501,6 +526,15 @@ private fun ModernHomeRoute(
         onContinueWatchingStartFromBeginning = onContinueWatchingStartFromBeginning,
         onContinueWatchingPlayManually = onContinueWatchingPlayManually,
         showContinueWatchingManualPlayOption = showContinueWatchingManualPlayOption,
+        featuredStudios = uiState.featuredStudios,
+        onStudioClick = { studio ->
+            onNavigateToTmdbEntityBrowse(
+                studio.entityKind,
+                studio.tmdbId,
+                studio.name,
+                studio.sourceType
+            )
+        },
         onRequestTrailerPreview = requestTrailerPreview,
         onLoadMoreCatalog = loadMoreCatalog,
         onRemoveContinueWatching = removeContinueWatching,

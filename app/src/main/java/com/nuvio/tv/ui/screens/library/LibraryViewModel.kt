@@ -30,6 +30,13 @@ import kotlinx.coroutines.launch
 import com.nuvio.tv.R
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.absoluteValue
+
+private const val MIN_DISCOVERY_STYLE_LIBRARY_ITEMS = 12
+private const val MAX_LIBRARY_ROW_ITEMS = 24
+private const val MAX_LIBRARY_MOVIE_GENRE_ROWS = 8
+private const val MAX_LIBRARY_SHOW_GENRE_ROWS = 8
+private const val MIN_LIBRARY_SUPPORTING_ROW_ITEMS = 4
 
 data class LibraryTypeTab(
     val key: String,
@@ -75,7 +82,9 @@ data class LibraryListEditorState(
 }
 
 data class LibraryRowGroup(
+    val key: String,
     val title: String,
+    val subtitle: String? = null,
     val items: List<LibraryEntry>
 )
 
@@ -99,27 +108,11 @@ data class LibraryUiState(
     val showManageDialog: Boolean = false,
     val manageSelectedListKey: String? = null,
     val listEditorState: LibraryListEditorState? = null,
-    val pendingOperation: Boolean = false
-) {
-    val groupedRows: List<LibraryRowGroup>
-        get() {
-            if (visibleItems.isEmpty()) return emptyList()
-            val groups = mutableListOf<LibraryRowGroup>()
-            val movies = visibleItems.filter { it.type.equals("movie", ignoreCase = true) }
-            val series = visibleItems.filter { it.type.equals("series", ignoreCase = true) }
-            val other = visibleItems.filter {
-                !it.type.equals("movie", ignoreCase = true) && !it.type.equals("series", ignoreCase = true)
-            }
-            if (movies.isNotEmpty()) groups.add(LibraryRowGroup("Movies", movies))
-            if (series.isNotEmpty()) groups.add(LibraryRowGroup("TV Shows", series))
-            if (other.isNotEmpty()) groups.add(LibraryRowGroup("Other", other))
-            // If all items are the same type, just return one group with a generic title
-            if (groups.size == 1) {
-                return listOf(LibraryRowGroup("Library", visibleItems))
-            }
-            return groups
-        }
-}
+    val pendingOperation: Boolean = false,
+    val appliedRandomSortVersion: Long = -1L,
+    val randomOrderKeys: List<String> = emptyList(),
+    val groupedRows: List<LibraryRowGroup> = emptyList()
+)
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -250,13 +243,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun onScreenEntered() {
-        _uiState.update { current ->
-            if (current.selectedSortOption == LibrarySortOption.RANDOM) {
-                current.withVisibleItems()
-            } else {
-                current
-            }
-        }
+        Unit
     }
 
     fun onSelectTypeTab(tab: LibraryTypeTab) {
@@ -552,10 +539,15 @@ class LibraryViewModel @Inject constructor(
                     ) {
                         current
                     } else {
+                        val nextSelectedSort = if (applySort) {
+                            savedSort
+                        } else {
+                            current.selectedSortOption
+                        }
                         val updated = current.copy(
                             posterCardWidthDp = widthDp,
                             posterCardCornerRadiusDp = cornerRadiusDp,
-                            selectedSortOption = if (applySort) savedSort!! else current.selectedSortOption
+                            selectedSortOption = nextSelectedSort
                         )
                         if (applySort) updated.withVisibleItems() else updated
                     }
@@ -655,6 +647,294 @@ class LibraryViewModel @Inject constructor(
             .ifBlank { "Unknown" }
     }
 
+    private fun buildGroupedRows(
+        visibleItems: List<LibraryEntry>,
+        sourceMode: LibrarySourceMode,
+        selectedSortOption: LibrarySortOption
+    ): List<LibraryRowGroup> {
+        if (visibleItems.isEmpty()) return emptyList()
+        if (selectedSortOption == LibrarySortOption.RANDOM) {
+            return buildRandomGroupedRows(visibleItems)
+        }
+        if (visibleItems.size < MIN_DISCOVERY_STYLE_LIBRARY_ITEMS) {
+            return buildBasicGroupedRows(visibleItems)
+        }
+
+        val rows = mutableListOf<LibraryRowGroup>()
+        val seenRowKeys = linkedSetOf<String>()
+        val seenLeadSignatures = linkedSetOf<String>()
+        val indexByKey = visibleItems.mapIndexed { index, entry -> libraryEntryContentKey(entry) to index }.toMap()
+        val currentYear = java.time.LocalDate.now().year
+        val movies = visibleItems.filter { it.type.equals("movie", ignoreCase = true) }
+        val series = visibleItems.filter { it.type.equals("series", ignoreCase = true) }
+
+        fun addRow(
+            key: String,
+            title: String,
+            items: List<LibraryEntry>,
+            subtitle: String? = null,
+            minItems: Int = MIN_LIBRARY_SUPPORTING_ROW_ITEMS
+        ) {
+            val deduped = items
+                .distinctBy(::libraryEntryContentKey)
+                .take(MAX_LIBRARY_ROW_ITEMS)
+            if (deduped.size < minItems) return
+            if (!seenRowKeys.add(key)) return
+            val leadSignature = deduped
+                .take(10)
+                .joinToString("|", transform = ::libraryEntryContentKey)
+            if (!seenLeadSignatures.add(leadSignature)) return
+            rows += LibraryRowGroup(
+                key = key,
+                title = title,
+                subtitle = subtitle,
+                items = deduped
+            )
+        }
+
+        addRow(
+            key = "primary:${selectedSortOption.key}",
+            title = primaryLibraryRowTitle(sourceMode, selectedSortOption),
+            subtitle = primaryLibraryRowSubtitle(selectedSortOption),
+            items = visibleItems,
+            minItems = 1
+        )
+
+        if (movies.isNotEmpty() && series.isNotEmpty()) {
+            addRow(
+                key = "movies",
+                title = "Movies",
+                subtitle = "Movie picks from your library",
+                items = movies
+            )
+            addRow(
+                key = "series",
+                title = "TV Shows",
+                subtitle = "Series picks from your library",
+                items = series
+            )
+        }
+
+        if (movies.size >= MIN_LIBRARY_SUPPORTING_ROW_ITEMS) {
+            addRow(
+                key = "top_rated_movies",
+                title = "Top Rated Movies",
+                subtitle = "Highest rated movies in your library",
+                items = movies.sortedWith(
+                    compareByDescending<LibraryEntry> { it.imdbRating ?: -1f }
+                        .thenByDescending { it.releaseYear() ?: 0 }
+                        .thenBy { indexByKey[libraryEntryContentKey(it)] ?: Int.MAX_VALUE }
+                ).filter { it.imdbRating != null }
+            )
+            addRow(
+                key = "newer_movies",
+                title = "Newer Movies",
+                subtitle = "Recent releases from your library",
+                items = movies
+                    .filter { entry -> (entry.releaseYear() ?: 0) >= currentYear - 5 }
+                    .sortedWith(
+                        compareByDescending<LibraryEntry> { it.releaseYear() ?: 0 }
+                            .thenBy { indexByKey[libraryEntryContentKey(it)] ?: Int.MAX_VALUE }
+                    )
+            )
+            addRow(
+                key = "classic_movies",
+                title = "Classic Movies",
+                subtitle = "Older favorites from your library",
+                items = movies
+                    .filter { entry -> (entry.releaseYear() ?: Int.MAX_VALUE) <= 2009 }
+                    .sortedWith(
+                        compareByDescending<LibraryEntry> { it.imdbRating ?: -1f }
+                            .thenBy { indexByKey[libraryEntryContentKey(it)] ?: Int.MAX_VALUE }
+                    )
+            )
+        }
+
+        if (series.size >= MIN_LIBRARY_SUPPORTING_ROW_ITEMS) {
+            addRow(
+                key = "top_rated_series",
+                title = "Top Rated Shows",
+                subtitle = "Highest rated shows in your library",
+                items = series.sortedWith(
+                    compareByDescending<LibraryEntry> { it.imdbRating ?: -1f }
+                        .thenByDescending { it.releaseYear() ?: 0 }
+                        .thenBy { indexByKey[libraryEntryContentKey(it)] ?: Int.MAX_VALUE }
+                ).filter { it.imdbRating != null }
+            )
+            addRow(
+                key = "recent_series",
+                title = "Recent Shows",
+                subtitle = "Newer series from your library",
+                items = series
+                    .filter { entry -> (entry.releaseYear() ?: 0) >= currentYear - 5 }
+                    .sortedWith(
+                        compareByDescending<LibraryEntry> { it.releaseYear() ?: 0 }
+                            .thenBy { indexByKey[libraryEntryContentKey(it)] ?: Int.MAX_VALUE }
+                    )
+            )
+            addRow(
+                key = "binge_worthy_series",
+                title = "Binge-Worthy Shows",
+                subtitle = "Well-rated series from your library",
+                items = series
+                    .filter { entry -> (entry.imdbRating ?: 0f) >= 7.5f }
+                    .sortedWith(
+                        compareByDescending<LibraryEntry> { it.imdbRating ?: -1f }
+                            .thenByDescending { it.releaseYear() ?: 0 }
+                            .thenBy { indexByKey[libraryEntryContentKey(it)] ?: Int.MAX_VALUE }
+                    )
+            )
+        }
+
+        buildGenreBuckets(movies)
+            .take(MAX_LIBRARY_MOVIE_GENRE_ROWS)
+            .forEach { (genreName, genreItems) ->
+                addRow(
+                    key = "movie_genre:${genreName.lowercase(Locale.ROOT)}",
+                    title = "$genreName Movies",
+                    subtitle = "Movie picks from your library",
+                    items = genreItems
+                )
+            }
+
+        buildGenreBuckets(series)
+            .take(MAX_LIBRARY_SHOW_GENRE_ROWS)
+            .forEach { (genreName, genreItems) ->
+                addRow(
+                    key = "series_genre:${genreName.lowercase(Locale.ROOT)}",
+                    title = "$genreName Shows",
+                    subtitle = "Series picks from your library",
+                    items = genreItems
+                )
+            }
+
+        return rows.ifEmpty { buildBasicGroupedRows(visibleItems) }
+    }
+
+    private fun buildRandomGroupedRows(visibleItems: List<LibraryEntry>): List<LibraryRowGroup> {
+        val rows = mutableListOf<LibraryRowGroup>()
+        rows += LibraryRowGroup(
+            key = "primary:random",
+            title = "Shuffle Picks",
+            subtitle = "A stable random mix from your library",
+            items = visibleItems.take(MAX_LIBRARY_ROW_ITEMS)
+        )
+
+        val movies = visibleItems.filter { it.type.equals("movie", ignoreCase = true) }
+        if (movies.size >= MIN_LIBRARY_SUPPORTING_ROW_ITEMS) {
+            rows += LibraryRowGroup(
+                key = "movies",
+                title = "Movies",
+                subtitle = "Movie picks from your library",
+                items = movies.take(MAX_LIBRARY_ROW_ITEMS)
+            )
+        }
+
+        val series = visibleItems.filter { it.type.equals("series", ignoreCase = true) }
+        if (series.size >= MIN_LIBRARY_SUPPORTING_ROW_ITEMS) {
+            rows += LibraryRowGroup(
+                key = "series",
+                title = "TV Shows",
+                subtitle = "Series picks from your library",
+                items = series.take(MAX_LIBRARY_ROW_ITEMS)
+            )
+        }
+
+        val other = visibleItems.filter {
+            !it.type.equals("movie", ignoreCase = true) && !it.type.equals("series", ignoreCase = true)
+        }
+        if (other.size >= MIN_LIBRARY_SUPPORTING_ROW_ITEMS) {
+            rows += LibraryRowGroup(
+                key = "other",
+                title = "Other",
+                subtitle = "Other picks from your library",
+                items = other.take(MAX_LIBRARY_ROW_ITEMS)
+            )
+        }
+        return rows
+    }
+
+    private fun buildBasicGroupedRows(visibleItems: List<LibraryEntry>): List<LibraryRowGroup> {
+        if (visibleItems.isEmpty()) return emptyList()
+        val groups = mutableListOf<LibraryRowGroup>()
+        val movies = visibleItems.filter { it.type.equals("movie", ignoreCase = true) }
+        val series = visibleItems.filter { it.type.equals("series", ignoreCase = true) }
+        val other = visibleItems.filter {
+            !it.type.equals("movie", ignoreCase = true) && !it.type.equals("series", ignoreCase = true)
+        }
+        if (movies.isNotEmpty()) groups.add(LibraryRowGroup(key = "movies", title = "Movies", items = movies))
+        if (series.isNotEmpty()) groups.add(LibraryRowGroup(key = "series", title = "TV Shows", items = series))
+        if (other.isNotEmpty()) groups.add(LibraryRowGroup(key = "other", title = "Other", items = other))
+        if (groups.size == 1) {
+            return listOf(LibraryRowGroup(key = "library", title = "Library", items = visibleItems))
+        }
+        return groups
+    }
+
+    private fun buildGenreBuckets(visibleItems: List<LibraryEntry>): List<Pair<String, List<LibraryEntry>>> {
+        val buckets = linkedMapOf<String, Pair<String, MutableList<LibraryEntry>>>()
+        visibleItems.forEach { entry ->
+            entry.genres
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase(Locale.ROOT) }
+                .forEach { genre ->
+                    val key = genre.lowercase(Locale.ROOT)
+                    val bucket = buckets.getOrPut(key) { genre to mutableListOf() }
+                    bucket.second += entry
+                }
+        }
+        return buckets.values
+            .map { (displayName, items) -> displayName to items.toList() }
+            .filter { (_, items) -> items.size >= MIN_LIBRARY_SUPPORTING_ROW_ITEMS }
+            .sortedWith(
+                compareByDescending<Pair<String, List<LibraryEntry>>> { it.second.size }
+                    .thenBy { it.first.lowercase(Locale.ROOT) }
+            )
+    }
+
+    private fun primaryLibraryRowTitle(
+        sourceMode: LibrarySourceMode,
+        selectedSortOption: LibrarySortOption
+    ): String {
+        return when (selectedSortOption) {
+            LibrarySortOption.DEFAULT -> if (sourceMode == LibrarySourceMode.TRAKT) "In Trakt Order" else "Library"
+            LibrarySortOption.ADDED_DESC -> "Recently Added"
+            LibrarySortOption.ADDED_ASC -> "Oldest Added"
+            LibrarySortOption.TITLE_ASC -> "A to Z"
+            LibrarySortOption.TITLE_DESC -> "Z to A"
+            LibrarySortOption.YEAR_ASC -> "Older Releases"
+            LibrarySortOption.YEAR_DESC -> "Newest Releases"
+            LibrarySortOption.RANDOM -> "Shuffle Picks"
+        }
+    }
+
+    private fun primaryLibraryRowSubtitle(selectedSortOption: LibrarySortOption): String? {
+        return when (selectedSortOption) {
+            LibrarySortOption.DEFAULT -> "All saved titles"
+            LibrarySortOption.ADDED_DESC -> "Newest saves first"
+            LibrarySortOption.ADDED_ASC -> "Oldest saves first"
+            LibrarySortOption.TITLE_ASC -> "Alphabetical"
+            LibrarySortOption.TITLE_DESC -> "Reverse alphabetical"
+            LibrarySortOption.YEAR_ASC -> "Sorted by release year"
+            LibrarySortOption.YEAR_DESC -> "Sorted by release year"
+            LibrarySortOption.RANDOM -> "A fresh mix from your library"
+        }
+    }
+
+    private fun libraryEntryContentKey(entry: LibraryEntry): String {
+        return "${entry.type.lowercase(Locale.ROOT)}:${entry.id}"
+    }
+
+    private fun LibraryEntry.releaseYear(): Int? {
+        return releaseInfo?.take(4)?.toIntOrNull()
+    }
+
+    private fun stableShuffleIndex(contentKey: String, seed: Long): Int {
+        val keyHash = contentKey.hashCode().toLong()
+        return (keyHash xor (seed * 1103515245L)).absoluteValue.toInt()
+    }
+
     private fun LibraryUiState.withVisibleItems(): LibraryUiState {
         val selectedTypeKey = selectedTypeTab?.key
         val typeFiltered = allItems.filter { entry ->
@@ -709,9 +989,44 @@ class LibraryViewModel @Inject constructor(
                     .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name.ifBlank { it.id } }
                     .thenBy { it.id }
             )
-            LibrarySortOption.RANDOM -> listFiltered.shuffled()
+            LibrarySortOption.RANDOM -> {
+                val incomingByKey = listFiltered.associateBy(::libraryEntryContentKey)
+                val incomingKeys = listFiltered.map(::libraryEntryContentKey)
+                val incomingKeySet = incomingKeys.toHashSet()
+                val preservedKeys = if (appliedRandomSortVersion == sortSelectionVersion) {
+                    randomOrderKeys.filter { it in incomingKeySet }
+                } else {
+                    emptyList()
+                }
+                val preservedKeySet = preservedKeys.toHashSet()
+                val newKeys = incomingKeys
+                    .filterNot { it in preservedKeySet }
+                    .sortedWith(
+                        compareBy<String> { stableShuffleIndex(it, sortSelectionVersion) }
+                            .thenBy { it }
+                    )
+                val orderedKeys = preservedKeys + newKeys
+                orderedKeys.mapNotNull(incomingByKey::get)
+            }
         }
 
-        return copy(visibleItems = sorted)
+        return copy(
+            visibleItems = sorted,
+            appliedRandomSortVersion = if (selectedSortOption == LibrarySortOption.RANDOM) {
+                sortSelectionVersion
+            } else {
+                -1L
+            },
+            randomOrderKeys = if (selectedSortOption == LibrarySortOption.RANDOM) {
+                sorted.map(::libraryEntryContentKey)
+            } else {
+                emptyList()
+            },
+            groupedRows = buildGroupedRows(
+                visibleItems = sorted,
+                sourceMode = sourceMode,
+                selectedSortOption = selectedSortOption
+            )
+        )
     }
 }

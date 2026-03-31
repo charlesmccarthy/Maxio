@@ -13,6 +13,7 @@ import com.nuvio.tv.domain.model.WatchProgress
 @Immutable
 data class HomeUiState(
     val catalogRows: List<CatalogRow> = emptyList(),
+    val featuredStudios: List<FeaturedStudio> = emptyList(),
     val continueWatchingItems: List<ContinueWatchingItem> = emptyList(),
     val cwIsLoading: Boolean = true,
     val isLoading: Boolean = true,
@@ -51,6 +52,15 @@ data class HomeUiState(
     val hideUnreleasedContent: Boolean = false,
     val showFullReleaseDate: Boolean = true,
     val startupAuthNotice: StartupAuthNotice? = null
+)
+
+@Immutable
+data class FeaturedStudio(
+    val tmdbId: Int,
+    val name: String,
+    val logo: String?,
+    val entityKind: String,
+    val sourceType: String
 )
 
 @Immutable

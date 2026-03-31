@@ -79,6 +79,8 @@ fun GridHomeContent(
     onContinueWatchingPlayManually: (ContinueWatchingItem) -> Unit = {},
     showContinueWatchingManualPlayOption: Boolean = false,
     onNavigateToCatalogSeeAll: (String, String, String) -> Unit,
+    featuredStudios: List<FeaturedStudio> = emptyList(),
+    onStudioClick: (FeaturedStudio) -> Unit = {},
     onRemoveContinueWatching: (String, Int?, Int?, Boolean) -> Unit,
     isCatalogItemWatched: (MetaPreview) -> Boolean = { false },
     onCatalogItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> },
@@ -105,11 +107,13 @@ fun GridHomeContent(
     // Offset for section indices when continue watching is present
     val gridItems = uiState.gridItems
     val continueWatchingItems = uiState.continueWatchingItems
-    val continueWatchingOffset = if (continueWatchingItems.isNotEmpty()) 1 else 0
+    val leadingSectionOffset =
+        (if (continueWatchingItems.isNotEmpty()) 1 else 0) +
+            (if (featuredStudios.isNotEmpty()) 1 else 0)
 
     // Build index-to-section mapping for sticky header
-    val sectionMapping = remember(gridItems, continueWatchingOffset) {
-        buildSectionMapping(gridItems, continueWatchingOffset)
+    val sectionMapping = remember(gridItems, leadingSectionOffset) {
+        buildSectionMapping(gridItems, leadingSectionOffset)
     }
 
     val currentSectionName by remember(gridState, sectionMapping) {
@@ -201,6 +205,7 @@ fun GridHomeContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             var continueWatchingInserted = false
+            var featuredStudiosInserted = false
             var firstGridFocusableAssigned = false
             val contentOccurrencesByCatalogAndId = mutableMapOf<String, Int>()
 
@@ -283,6 +288,20 @@ fun GridHomeContent(
                                         val isNextUp = item is ContinueWatchingItem.NextUp
                                         onRemoveContinueWatching(contentId, season, episode, isNextUp)
                                     }
+                                )
+                            }
+                        }
+
+                        if (!featuredStudiosInserted && featuredStudios.isNotEmpty()) {
+                            featuredStudiosInserted = true
+                            item(
+                                key = "featured_studios",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "featured_studios"
+                            ) {
+                                FeaturedStudiosSection(
+                                    studios = featuredStudios,
+                                    onStudioClick = onStudioClick
                                 )
                             }
                         }
@@ -430,6 +449,19 @@ fun GridHomeContent(
                             val isNextUp = item is ContinueWatchingItem.NextUp
                             onRemoveContinueWatching(contentId, season, episode, isNextUp)
                         }
+                    )
+                }
+            }
+
+            if (!featuredStudiosInserted && featuredStudios.isNotEmpty()) {
+                item(
+                    key = "featured_studios_fallback",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "featured_studios"
+                ) {
+                    FeaturedStudiosSection(
+                        studios = featuredStudios,
+                        onStudioClick = onStudioClick
                     )
                 }
             }
