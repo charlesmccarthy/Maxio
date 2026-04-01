@@ -2,8 +2,9 @@
 
 package com.nuvio.tv.ui.screens.home
 
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -32,6 +34,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -41,9 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.tv.material3.Border
-import androidx.tv.material3.Card
-import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
@@ -62,14 +62,35 @@ fun FeaturedStudiosSection(
     if (studios.isEmpty()) return
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    val focusRequesters = remember(studios) {
-        studios.associate { studio -> studio.focusKey() to FocusRequester() }
-    }
+    val rowFocusRequester = remember { FocusRequester() }
+    val rowListState = rememberLazyListState()
     var selectedStudioKey by rememberSaveable(studios.map { it.focusKey() }) {
         mutableStateOf<String?>(null)
     }
+    var selectedIndex by rememberSaveable(studios.map { it.focusKey() }) {
+        mutableIntStateOf(0)
+    }
     var restoreFocusNonce by rememberSaveable(studios.map { it.focusKey() }) {
         mutableIntStateOf(0)
+    }
+    var rowFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(studios, selectedStudioKey) {
+        val selectedKey = selectedStudioKey ?: return@LaunchedEffect
+        val resolvedIndex = studios.indexOfFirst { it.focusKey() == selectedKey }
+        if (resolvedIndex >= 0 && selectedIndex != resolvedIndex) {
+            selectedIndex = resolvedIndex
+        }
+    }
+
+    LaunchedEffect(selectedIndex, studios.size) {
+        if (studios.isEmpty()) return@LaunchedEffect
+        val clampedIndex = selectedIndex.coerceIn(0, studios.lastIndex)
+        if (selectedIndex != clampedIndex) {
+            selectedIndex = clampedIndex
+            return@LaunchedEffect
+        }
+        runCatching { rowListState.scrollToItem(clampedIndex) }
     }
 
     DisposableEffect(lifecycleOwner, selectedStudioKey, studios) {
@@ -88,11 +109,11 @@ fun FeaturedStudiosSection(
     }
 
     LaunchedEffect(restoreFocusNonce, selectedStudioKey, studios) {
-        val key = selectedStudioKey ?: return@LaunchedEffect
+        if (selectedStudioKey == null) return@LaunchedEffect
         if (restoreFocusNonce <= 0) return@LaunchedEffect
-        val requester = focusRequesters[key] ?: return@LaunchedEffect
+        runCatching { rowListState.scrollToItem(selectedIndex.coerceIn(0, studios.lastIndex)) }
         repeat(2) { withFrameNanos { } }
-        runCatching { requester.requestFocus() }
+        runCatching { rowFocusRequester.requestFocus() }
     }
 
     Column(
@@ -108,7 +129,43 @@ fun FeaturedStudiosSection(
         )
 
         LazyRow(
-            modifier = Modifier.fillMaxWidth(),
+            state = rowListState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(rowFocusRequester)
+                .onFocusChanged { state ->
+                    rowFocused = state.isFocused || state.hasFocus
+                }
+                .focusable()
+                .onPreviewKeyEvent { keyEvent ->
+                    val native = keyEvent.nativeKeyEvent
+                    when {
+                        native.action == AndroidKeyEvent.ACTION_DOWN &&
+                            native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (studios.isNotEmpty()) {
+                                selectedIndex = (selectedIndex + 1) % studios.size
+                            }
+                            true
+                        }
+                        native.action == AndroidKeyEvent.ACTION_DOWN &&
+                            native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                            if (studios.isNotEmpty()) {
+                                selectedIndex = (selectedIndex - 1 + studios.size) % studios.size
+                            }
+                            true
+                        }
+                        native.action == AndroidKeyEvent.ACTION_UP &&
+                            (native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
+                                native.keyCode == AndroidKeyEvent.KEYCODE_ENTER ||
+                                native.keyCode == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER) -> {
+                            val studio = studios.getOrNull(selectedIndex) ?: return@onPreviewKeyEvent true
+                            selectedStudioKey = studio.focusKey()
+                            onStudioClick(studio)
+                            true
+                        }
+                        else -> false
+                    }
+                },
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -117,14 +174,10 @@ fun FeaturedStudiosSection(
                 key = { index, studio ->
                     "${studio.entityKind}-${studio.tmdbId}-$index-${studio.logo.orEmpty()}"
                 }
-            ) { _, studio ->
+            ) { index, studio ->
                 FeaturedStudioCard(
                     studio = studio,
-                    focusRequester = focusRequesters[studio.focusKey()],
-                    onClick = {
-                        selectedStudioKey = studio.focusKey()
-                        onStudioClick(studio)
-                    }
+                    isFocused = rowFocused && index == selectedIndex
                 )
             }
         }
@@ -134,12 +187,10 @@ fun FeaturedStudiosSection(
 @Composable
 private fun FeaturedStudioCard(
     studio: FeaturedStudio,
-    focusRequester: FocusRequester? = null,
-    onClick: () -> Unit
+    isFocused: Boolean
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    var isFocused by remember(studio.focusKey()) { mutableStateOf(false) }
     val outerShape = remember { RoundedCornerShape(18.dp) }
     val spacerShape = remember { RoundedCornerShape(16.dp) }
     val cardShape = remember { RoundedCornerShape(12.dp) }
@@ -174,55 +225,34 @@ private fun FeaturedStudioCard(
                     .background(if (isFocused) Color.Black.copy(alpha = 0.92f) else Color.Transparent)
                     .padding(spacerPadding)
             ) {
-                Card(
-                    onClick = onClick,
+                Box(
                     modifier = Modifier
                         .width(148.dp)
                         .height(60.dp)
-                        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                        .onFocusChanged { state ->
-                            isFocused = state.isFocused || state.hasFocus
-                        },
-                    colors = CardDefaults.colors(
-                        containerColor = Color.White,
-                        focusedContainerColor = Color.White
-                    ),
-                    border = CardDefaults.border(
-                        focusedBorder = Border(
-                            border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
-                            shape = cardShape
-                        )
-                    ),
-                    scale = CardDefaults.scale(focusedScale = 1.02f)
+                        .clip(cardShape)
+                        .background(Color.White)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp)
-                            .clip(cardShape)
-                            .background(Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (logoModel != null && !logoLoadFailed) {
-                            AsyncImage(
-                                model = logoModel,
-                                contentDescription = studio.name,
-                                onError = { logoLoadFailed = true },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        } else {
-                            Text(
-                                text = studio.name,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = NuvioTheme.extendedColors.textSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
+                    if (logoModel != null && !logoLoadFailed) {
+                        AsyncImage(
+                            model = logoModel,
+                            contentDescription = studio.name,
+                            onError = { logoLoadFailed = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text(
+                            text = studio.name,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = NuvioTheme.extendedColors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 16.dp)
+                        )
                     }
                 }
             }

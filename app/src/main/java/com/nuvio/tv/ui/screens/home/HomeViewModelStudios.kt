@@ -32,6 +32,7 @@ private val PINNED_FEATURED_STUDIOS = listOf(
     FeaturedStudio(6783, "Max", tmdbLogo("/rAb4M1LjGpWASxpk6Va791A7Nkw.png"), "network", "tv"),
     FeaturedStudio(88, "FX", tmdbLogo("/aexGjtcs42DgRtZh7zOxayiry4J.png"), "network", "tv"),
     FeaturedStudio(174, "AMC", tmdbLogo("/pmvRmATOCaDykE6JrVoeYxlFHw3.png"), "network", "tv"),
+    FeaturedStudio(129, "A&E", tmdbLogo("/ptSTdU4GPNJ1M8UVEOtA0KgtuNk.png"), "network", "tv"),
     FeaturedStudio(67, "Showtime", tmdbLogo("/Allse9kbjiP6ExaQrnSpIhkurEi.png"), "network", "tv"),
     FeaturedStudio(318, "Starz", tmdbLogo("/qx3Y9LCaK4mq1ykFuDIfjshlo3U.png"), "network", "tv"),
     FeaturedStudio(174, "Warner Bros. Pictures", tmdbLogo("/zhD3hhtKB5qyv7ZeL4uLpNxgMVU.png"), "company", "movie"),
@@ -240,6 +241,8 @@ private fun canonicalStudioDisplayName(name: String): String {
         lowercase == "hbo" -> "HBO"
         lowercase.contains("home box office") -> "HBO"
         lowercase == "apple tv" -> "Apple TV+"
+        lowercase == "a&e" -> "A&E"
+        lowercase.contains("a&e television") -> "A&E"
         lowercase == "starz" -> "Starz"
         lowercase == "hbo max" -> "Max"
         lowercase == "showtime networks" -> "Showtime"
