@@ -49,6 +49,8 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
 
+private const val PAUSE_OVERLAY_CAST_LIMIT = 20
+
 @Composable
 fun PauseOverlay(
     visible: Boolean,
@@ -244,7 +246,7 @@ private fun PauseMetadataView(
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     content = {
-                        items(cast.take(8)) { member ->
+                        items(cast.take(PAUSE_OVERLAY_CAST_LIMIT)) { member ->
                             CastChip(member = member, onClick = { onCastSelected(member) })
                         }
                     }

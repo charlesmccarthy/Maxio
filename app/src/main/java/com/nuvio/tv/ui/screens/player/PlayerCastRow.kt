@@ -52,6 +52,8 @@ import coil.request.ImageRequest
 import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.MetaCastMember
 
+private const val PLAYER_CAST_ROW_LIMIT = 20
+
 @Composable
 internal fun PlayerCastRow(
     castMembers: List<MetaCastMember>,
@@ -63,7 +65,7 @@ internal fun PlayerCastRow(
     onUpKey: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val displayMembers = remember(castMembers) { castMembers.take(10) }
+    val displayMembers = remember(castMembers) { castMembers.take(PLAYER_CAST_ROW_LIMIT) }
 
     Column(modifier = modifier) {
         Text(
