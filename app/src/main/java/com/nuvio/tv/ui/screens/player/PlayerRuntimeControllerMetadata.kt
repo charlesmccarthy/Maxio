@@ -111,6 +111,9 @@ private suspend fun PlayerRuntimeController.fetchTmdbEpisodeCast(
                     state
                 }
             }
+            if (episodeCastMembers.size < PLAYER_CAST_TARGET_COUNT) {
+                fetchTmdbCast(id, type)
+            }
         } else if (shouldEnrichPlayerCast(_uiState.value.castMembers)) {
             fetchTmdbCast(id, type)
         }

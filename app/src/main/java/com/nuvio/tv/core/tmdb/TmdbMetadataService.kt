@@ -414,7 +414,19 @@ class TmdbMetadataService @Inject constructor(
                     )
                 }
 
-            val castMembers = body.cast
+            val principalCastMembers = body.cast
+                .orEmpty()
+                .mapNotNull { member ->
+                    val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    MetaCastMember(
+                        name = name,
+                        character = member.character?.takeIf { it.isNotBlank() },
+                        photo = buildImageUrl(member.profilePath, size = "w500"),
+                        tmdbId = member.id
+                    )
+                }
+
+            val guestCastMembers = body.guestStars
                 .orEmpty()
                 .mapNotNull { member ->
                     val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -427,9 +439,10 @@ class TmdbMetadataService @Inject constructor(
                 }
 
             val result = buildList {
+                addAll(principalCastMembers)
+                addAll(guestCastMembers)
                 addAll(directorMembers)
                 addAll(writerMembers)
-                addAll(castMembers)
             }
                 .filter { it.name.isNotBlank() }
                 .distinctBy { it.tmdbId ?: (it.name.lowercase() + "|" + (it.character ?: "")) }

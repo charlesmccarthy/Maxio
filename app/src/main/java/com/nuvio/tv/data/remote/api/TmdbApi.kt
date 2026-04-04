@@ -322,6 +322,7 @@ data class TmdbNetwork(
 @JsonClass(generateAdapter = true)
 data class TmdbCreditsResponse(
     @Json(name = "cast") val cast: List<TmdbCastMember>? = null,
+    @Json(name = "guest_stars") val guestStars: List<TmdbCastMember>? = null,
     @Json(name = "crew") val crew: List<TmdbCrewMember>? = null
 )
 
