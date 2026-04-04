@@ -288,6 +288,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     val orderedKeys = catalogOrder.toList()
     val catalogSnapshot = catalogsMap.toMap()
     val heroCatalogKeys = currentHeroCatalogKeys
+    val currentHeroItems = _uiState.value.heroItems
     val currentLayout = _uiState.value.homeLayout
     val currentGridItems = _uiState.value.gridItems
     val heroSectionEnabled = _uiState.value.heroSectionEnabled
@@ -323,6 +324,15 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             currentOrder = currentHeroOrder,
             rotationSeed = heroRotationSeed
         )
+        val stabilizedHeroItems = if (catalogsLoadInProgress || pendingCatalogLoads > 0) {
+            stabilizeIncrementalHomeHeroItems(
+                previousItems = currentHeroItems,
+                nextItems = computedHeroItems,
+                availableRows = orderedRows
+            )
+        } else {
+            computedHeroItems
+        }
 
 
         val displayRowsSource = if (likedRowsSnapshot.isEmpty()) {
@@ -377,8 +387,8 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             val maxWithSeeAll = itemsPerRow * rowCount - 1
             val maxWithoutSeeAll = itemsPerRow * rowCount
             buildList {
-                if (heroSectionEnabled && computedHeroItems.isNotEmpty()) {
-                    add(GridItem.Hero(computedHeroItems))
+                if (heroSectionEnabled && stabilizedHeroItems.isNotEmpty()) {
+                    add(GridItem.Hero(stabilizedHeroItems))
                 }
                 computedDisplayRows.filter { it.items.isNotEmpty() }.forEach { row ->
                     add(
@@ -417,7 +427,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
             currentGridItems
         }
 
-        CatalogUpdateResult(computedDisplayRows, computedHeroItems, computedGridItems, orderedRows)
+        CatalogUpdateResult(computedDisplayRows, stabilizedHeroItems, computedGridItems, orderedRows)
     }
 
     _fullCatalogRows.update { rows ->
@@ -551,6 +561,43 @@ private fun buildHomeHeroItems(
     }
 
     return result
+}
+
+private fun stabilizeIncrementalHomeHeroItems(
+    previousItems: List<MetaPreview>,
+    nextItems: List<MetaPreview>,
+    availableRows: List<CatalogRow>
+): List<MetaPreview> {
+    if (previousItems.isEmpty()) return nextItems
+    if (nextItems.isEmpty()) return emptyList()
+
+    val availableKeys = availableRows
+        .asSequence()
+        .flatMap { row -> row.items.asSequence() }
+        .map(::heroIdentityKey)
+        .toSet()
+
+    val result = mutableListOf<MetaPreview>()
+    val seenKeys = linkedSetOf<String>()
+
+    previousItems.forEach { item ->
+        val key = heroIdentityKey(item)
+        if (key in availableKeys && seenKeys.add(key)) {
+            result += item
+        }
+    }
+
+    nextItems.forEach { item ->
+        val key = heroIdentityKey(item)
+        if (seenKeys.add(key)) {
+            result += item
+        }
+        if (result.size >= HOME_HERO_ITEM_COUNT) {
+            return result.take(HOME_HERO_ITEM_COUNT)
+        }
+    }
+
+    return result.take(HOME_HERO_ITEM_COUNT)
 }
 
 private fun takeHomeHeroItemsFromRows(

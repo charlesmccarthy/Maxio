@@ -5,6 +5,7 @@ import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.remote.api.TmdbDiscoverResult
 import com.nuvio.tv.data.remote.api.TmdbEpisode
+import com.nuvio.tv.data.remote.api.TmdbAggregateCastMember
 import com.nuvio.tv.data.remote.api.TmdbImage
 import com.nuvio.tv.data.remote.api.TmdbPersonCreditCast
 import com.nuvio.tv.data.remote.api.TmdbPersonCreditCrew
@@ -67,7 +68,7 @@ class TmdbMetadataService @Inject constructor(
                 }
 
                 // Fetch details, credits, and images in parallel
-                val (details, credits, images, ageRating) = coroutineScope {
+                val (details, credits, aggregateCredits, images, ageRating) = coroutineScope {
                     val detailsDeferred = async {
                         when (tmdbType) {
                             "tv" -> tmdbApi.getTvDetails(numericId, TMDB_API_KEY, normalizedLanguage)
@@ -79,6 +80,12 @@ class TmdbMetadataService @Inject constructor(
                             "tv" -> tmdbApi.getTvCredits(numericId, TMDB_API_KEY, normalizedLanguage)
                             else -> tmdbApi.getMovieCredits(numericId, TMDB_API_KEY, normalizedLanguage)
                         }.body()
+                    }
+                    val aggregateCreditsDeferred = async {
+                        when (tmdbType) {
+                            "tv" -> tmdbApi.getTvAggregateCredits(numericId, TMDB_API_KEY, normalizedLanguage).body()
+                            else -> null
+                        }
                     }
                     val imagesDeferred = async {
                         when (tmdbType) {
@@ -98,9 +105,10 @@ class TmdbMetadataService @Inject constructor(
                             }
                         }
                     }
-                    Quadruple(
+                    Quintuple(
                         detailsDeferred.await(),
                         creditsDeferred.await(),
+                        aggregateCreditsDeferred.await(),
                         imagesDeferred.await(),
                         ageRatingDeferred.await()
                     )
@@ -153,17 +161,37 @@ class TmdbMetadataService @Inject constructor(
 
                 val logo = buildImageUrl(logoPath, size = "w500")
 
-                val castMembers = credits?.cast
-                    .orEmpty()
-                    .mapNotNull { member ->
-                        val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                        MetaCastMember(
-                            name = name,
-                            character = member.character?.takeIf { it.isNotBlank() },
-                            photo = buildImageUrl(member.profilePath, size = "w500"),
-                            tmdbId = member.id
-                        )
-                    }
+                val castMembers = if (tmdbType == "tv") {
+                    mapAggregateTvCastMembers(
+                        cast = aggregateCredits?.cast.orEmpty(),
+                        imageUrlForProfile = { profilePath -> buildImageUrl(profilePath, size = "w500") }
+                    )
+                        .ifEmpty {
+                            credits?.cast
+                                .orEmpty()
+                                .mapNotNull { member ->
+                                    val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                    MetaCastMember(
+                                        name = name,
+                                        character = member.character?.takeIf { it.isNotBlank() },
+                                        photo = buildImageUrl(member.profilePath, size = "w500"),
+                                        tmdbId = member.id
+                                    )
+                                }
+                        }
+                } else {
+                    credits?.cast
+                        .orEmpty()
+                        .mapNotNull { member ->
+                            val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                            MetaCastMember(
+                                name = name,
+                                character = member.character?.takeIf { it.isNotBlank() },
+                                photo = buildImageUrl(member.profilePath, size = "w500"),
+                                tmdbId = member.id
+                            )
+                        }
+                }
 
                 val creatorMembers = if (tmdbType == "tv") {
                     details?.createdBy
@@ -1073,6 +1101,41 @@ private data class Quadruple<A, B, C, D>(
     val third: C,
     val fourth: D
 )
+
+private data class Quintuple<A, B, C, D, E>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E
+)
+
+private fun mapAggregateTvCastMembers(
+    cast: List<TmdbAggregateCastMember>,
+    imageUrlForProfile: (String?) -> String?
+): List<MetaCastMember> {
+    return cast
+        .sortedWith(
+            compareBy<TmdbAggregateCastMember> { it.order ?: Int.MAX_VALUE }
+                .thenByDescending { it.totalEpisodeCount ?: 0 }
+                .thenBy { it.name.orEmpty() }
+        )
+        .mapNotNull { member ->
+            val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val primaryRole = member.roles
+                .orEmpty()
+                .maxWithOrNull(
+                    compareBy<com.nuvio.tv.data.remote.api.TmdbAggregateRole> { it.character.isNullOrBlank() }
+                        .thenByDescending { it.episodeCount ?: 0 }
+                )
+            MetaCastMember(
+                name = name,
+                character = primaryRole?.character?.takeIf { it.isNotBlank() },
+                photo = imageUrlForProfile(member.profilePath),
+                tmdbId = member.id
+            )
+        }
+}
 
 private fun preferredRegions(normalizedLanguage: String): List<String> {
     val fromLanguage = normalizedLanguage.substringAfter("-", "").uppercase(Locale.US).takeIf { it.length == 2 }

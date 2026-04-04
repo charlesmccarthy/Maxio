@@ -49,7 +49,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
 
-private const val PAUSE_OVERLAY_CAST_LIMIT = 20
+private const val PAUSE_OVERLAY_CAST_LIMIT = 50
 
 @Composable
 fun PauseOverlay(

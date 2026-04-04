@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val PLAYER_CAST_TARGET_COUNT = 50
+
 internal fun PlayerRuntimeController.fetchMetaDetails(id: String?, type: String?) {
     if (id.isNullOrBlank() || type.isNullOrBlank()) return
 
@@ -32,8 +34,9 @@ internal fun PlayerRuntimeController.fetchMetaDetails(id: String?, type: String?
             }
         }
 
-        // Enrich cast from TMDB if addon didn't provide cast data
-        if (_uiState.value.castMembers.isEmpty()) {
+        // Enrich cast from TMDB when addon metadata is sparse so the player can
+        // show a fuller cast list without discarding addon-provided ordering.
+        if (shouldEnrichPlayerCast(_uiState.value.castMembers)) {
             fetchTmdbCast(id, type)
         }
     }
@@ -72,8 +75,13 @@ private suspend fun PlayerRuntimeController.fetchTmdbCast(id: String, type: Stri
 
         if (castMembers.isNotEmpty()) {
             _uiState.update { state ->
-                if (state.castMembers.isEmpty()) {
-                    state.copy(castMembers = castMembers)
+                val mergedCastMembers = mergePlayerCastMembers(
+                    primary = state.castMembers,
+                    secondary = castMembers,
+                    limit = PLAYER_CAST_TARGET_COUNT
+                )
+                if (mergedCastMembers != state.castMembers) {
+                    state.copy(castMembers = mergedCastMembers)
                 } else {
                     state
                 }
@@ -89,12 +97,61 @@ internal fun PlayerRuntimeController.applyMetaDetails(meta: Meta) {
     val description = resolveDescription(meta)
 
     _uiState.update { state ->
+        val mergedCastMembers = mergePlayerCastMembers(
+            primary = state.castMembers,
+            secondary = meta.castMembers,
+            limit = PLAYER_CAST_TARGET_COUNT
+        )
         state.copy(
             description = description ?: state.description,
-            castMembers = if (meta.castMembers.isNotEmpty()) meta.castMembers else state.castMembers
+            castMembers = mergedCastMembers
         )
     }
     recomputeNextEpisode(resetVisibility = false)
+}
+
+private fun shouldEnrichPlayerCast(castMembers: List<MetaCastMember>): Boolean {
+    return castMembers.size < PLAYER_CAST_TARGET_COUNT
+}
+
+private fun mergePlayerCastMembers(
+    primary: List<MetaCastMember>,
+    secondary: List<MetaCastMember>,
+    limit: Int
+): List<MetaCastMember> {
+    if (limit <= 0) return emptyList()
+
+    val merged = linkedMapOf<String, MetaCastMember>()
+
+    (primary + secondary)
+        .filter { it.name.isNotBlank() }
+        .forEach { member ->
+            val key = playerCastMemberKey(member)
+            val existing = merged[key]
+            merged[key] = if (existing == null) {
+                member
+            } else {
+                mergePlayerCastMember(existing, member)
+            }
+        }
+
+    return merged.values.take(limit)
+}
+
+private fun playerCastMemberKey(member: MetaCastMember): String {
+    return member.tmdbId?.let { "tmdb:$it" } ?: member.name.trim().lowercase()
+}
+
+private fun mergePlayerCastMember(
+    current: MetaCastMember,
+    incoming: MetaCastMember
+): MetaCastMember {
+    return MetaCastMember(
+        name = current.name.ifBlank { incoming.name },
+        character = current.character?.takeIf { it.isNotBlank() } ?: incoming.character,
+        photo = current.photo?.takeIf { it.isNotBlank() } ?: incoming.photo,
+        tmdbId = current.tmdbId ?: incoming.tmdbId
+    )
 }
 
 internal fun PlayerRuntimeController.resolveDescription(meta: Meta): String? {
