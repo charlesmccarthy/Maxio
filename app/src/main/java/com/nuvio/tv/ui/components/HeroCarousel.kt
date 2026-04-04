@@ -106,11 +106,18 @@ fun HeroCarousel(
         }
     }
 
-    LaunchedEffect(isFocused, activeIndex, trailerEnabled) {
+    LaunchedEffect(
+        isFocused,
+        trailerEnabled,
+        activeItem.id,
+        activeItem.name,
+        activeItem.releaseInfo,
+        activeItem.trailerYtIds
+    ) {
         if (isFocused && trailerEnabled) {
             delay(HERO_TRAILER_REQUEST_DEBOUNCE_MS)
             if (isFocused) {
-                onRequestTrailerPreview(items[activeIndex])
+                onRequestTrailerPreview(activeItem)
             }
         }
     }

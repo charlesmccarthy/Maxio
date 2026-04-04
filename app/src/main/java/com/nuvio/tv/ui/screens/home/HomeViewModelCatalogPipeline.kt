@@ -28,6 +28,9 @@ private data class CatalogUpdateResult(
     val fullRows: List<CatalogRow>
 )
 
+private const val HOME_HERO_ITEM_COUNT = 12
+private const val HOME_HERO_SELECTED_ROW_TARGET = 9
+
 internal fun HomeViewModel.loadHomeCatalogOrderPreferencePipeline() {
     viewModelScope.launch {
         layoutPreferenceDataStore.homeCatalogOrderKeys.collectLatest { keys ->
@@ -105,6 +108,7 @@ internal suspend fun HomeViewModel.loadAllCatalogsPipeline(
     hasRenderedFirstCatalog = false
     trailerPreviewLoadingIds.clear()
     trailerPreviewNegativeCache.clear()
+    trailerPreviewRequestSignatures.clear()
     trailerPreviewUrlsState.clear()
     trailerPreviewAudioUrlsState.clear()
     activeTrailerPreviewItemId = null
@@ -291,9 +295,9 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     val likedRowsSnapshot = likedRecommendationRows.toList()
 
     val (displayRows, baseHeroItems, baseGridItems, fullRowsFiltered) = withContext(Dispatchers.Default) {
+        val today = LocalDate.now()
         val rawRows = orderedKeys.mapNotNull { key -> catalogSnapshot[key] }
         val orderedRows = if (hideUnreleased) {
-            val today = LocalDate.now()
             rawRows.map { it.filterReleasedItems(today) }
         } else {
             rawRows
@@ -307,49 +311,18 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
         } else {
             emptyList()
         }
-        fun stableHeroCandidates(row: CatalogRow, candidates: Collection<MetaPreview>): List<MetaPreview> {
-            return candidates.sortedWith(
-                compareBy<MetaPreview> { stableHeroSortKey(row, it) }
-                    .thenBy { it.id }
-            )
-        }
-        fun slotShuffled(rows: List<CatalogRow>, filter: (MetaPreview) -> Boolean, currentOrder: List<String>): List<MetaPreview> {
-            val totalCatalogs = rows.size.coerceAtLeast(1)
-            val baseSlot = 7 / totalCatalogs
-            val remainder = 7 % totalCatalogs
-            val result = mutableListOf<MetaPreview>()
-            rows.forEachIndexed { index, row ->
-                val slot = baseSlot + if (index < remainder) 1 else 0
-                val existing = currentOrder.filter { id -> row.items.any { it.id == id } }
-                val byId = row.items.filter(filter).associateBy { it.id }
-                val ordered = existing.mapNotNull { byId[it] }
-                val new = stableHeroCandidates(
-                    row = row,
-                    candidates = byId.values.filter { it.id !in existing }
-                )
-                result += (ordered + new).take(slot)
-            }
-            return result
-        }
-
         val currentHeroOrder = heroItemOrder
-
-        val heroItemsFromSelectedCatalogs = slotShuffled(
-            selectedHeroRows, { it.hasHeroArtwork() }, currentHeroOrder
-        )
-        val fallbackHeroItemsFromSelectedCatalogs = slotShuffled(
-            selectedHeroRows, { it.isValidCatalogItem() }, currentHeroOrder
-        )
-        val fallbackHeroItemsWithArtwork = slotShuffled(
-            orderedRows, { it.hasHeroArtwork() }, currentHeroOrder
+        val heroRotationSeed = buildHomeHeroRotationSeed(
+            startupStartedAtMs = startupStartedAtMs,
+            today = today
         )
 
-        val computedHeroItems = when {
-            heroItemsFromSelectedCatalogs.isNotEmpty() -> heroItemsFromSelectedCatalogs
-            fallbackHeroItemsFromSelectedCatalogs.isNotEmpty() -> fallbackHeroItemsFromSelectedCatalogs
-            fallbackHeroItemsWithArtwork.isNotEmpty() -> fallbackHeroItemsWithArtwork
-            else -> emptyList()
-        }
+        val computedHeroItems = buildHomeHeroItems(
+            orderedRows = orderedRows,
+            selectedHeroRows = selectedHeroRows,
+            currentOrder = currentHeroOrder,
+            rotationSeed = heroRotationSeed
+        )
 
 
         val displayRowsSource = if (likedRowsSnapshot.isEmpty()) {
@@ -457,7 +430,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
         baseGridItems
     }
 
-    heroItemOrder = baseHeroItems.map { it.id }
+    heroItemOrder = baseHeroItems.map(::heroIdentityKey)
 
     _uiState.update { state ->
         state.copy(
@@ -514,11 +487,174 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     refreshFeaturedStudiosPipeline(displayRows, baseHeroItems)
 }
 
-private fun stableHeroSortKey(
+private fun buildHomeHeroItems(
+    orderedRows: List<CatalogRow>,
+    selectedHeroRows: List<CatalogRow>,
+    currentOrder: List<String>,
+    rotationSeed: Long
+): List<MetaPreview> {
+    if (orderedRows.isEmpty()) return emptyList()
+
+    val result = mutableListOf<MetaPreview>()
+    val selectedKeys = linkedSetOf<String>()
+
+    val selectedTarget = if (selectedHeroRows.isEmpty()) {
+        0
+    } else {
+        minOf(
+            HOME_HERO_ITEM_COUNT,
+            maxOf(
+                selectedHeroRows.size.coerceAtMost(HOME_HERO_ITEM_COUNT),
+                HOME_HERO_SELECTED_ROW_TARGET
+            )
+        )
+    }
+
+    result += takeHomeHeroItemsFromRows(
+        rows = selectedHeroRows,
+        filter = MetaPreview::hasHeroArtwork,
+        currentOrder = currentOrder,
+        limit = selectedTarget,
+        rotationSeed = rotationSeed,
+        selectedKeys = selectedKeys
+    )
+    if (result.size < selectedTarget) {
+        result += takeHomeHeroItemsFromRows(
+            rows = selectedHeroRows,
+            filter = MetaPreview::isValidCatalogItem,
+            currentOrder = currentOrder,
+            limit = selectedTarget - result.size,
+            rotationSeed = rotationSeed,
+            selectedKeys = selectedKeys
+        )
+    }
+
+    if (result.size < HOME_HERO_ITEM_COUNT) {
+        result += takeHomeHeroItemsFromRows(
+            rows = orderedRows,
+            filter = MetaPreview::hasHeroArtwork,
+            currentOrder = currentOrder,
+            limit = HOME_HERO_ITEM_COUNT - result.size,
+            rotationSeed = rotationSeed,
+            selectedKeys = selectedKeys
+        )
+    }
+    if (result.size < HOME_HERO_ITEM_COUNT) {
+        result += takeHomeHeroItemsFromRows(
+            rows = orderedRows,
+            filter = MetaPreview::isValidCatalogItem,
+            currentOrder = currentOrder,
+            limit = HOME_HERO_ITEM_COUNT - result.size,
+            rotationSeed = rotationSeed,
+            selectedKeys = selectedKeys
+        )
+    }
+
+    return result
+}
+
+private fun takeHomeHeroItemsFromRows(
+    rows: List<CatalogRow>,
+    filter: (MetaPreview) -> Boolean,
+    currentOrder: List<String>,
+    limit: Int,
+    rotationSeed: Long,
+    selectedKeys: MutableSet<String>
+): List<MetaPreview> {
+    if (limit <= 0 || rows.isEmpty()) return emptyList()
+
+    val currentOrderIndex = currentOrder.withIndex().associate { (index, key) -> key to index }
+    val rowStartOffset = positiveModulo(rotationSeed.toInt(), rows.size)
+
+    data class RowCursor(
+        val items: List<MetaPreview>,
+        var nextIndex: Int = 0
+    )
+
+    val cursors = buildList {
+        val rotatedRows = rows.drop(rowStartOffset) + rows.take(rowStartOffset)
+        rotatedRows.forEach { row ->
+            val filteredByIdentity = linkedMapOf<String, MetaPreview>()
+            row.items.forEach { item ->
+                if (!filter(item)) return@forEach
+                val key = heroIdentityKey(item)
+                if (key !in filteredByIdentity) {
+                    filteredByIdentity[key] = item
+                }
+            }
+            if (filteredByIdentity.isEmpty()) return@forEach
+            val orderedItems = filteredByIdentity.values.sortedWith(
+                compareBy<MetaPreview> { currentOrderIndex[heroIdentityKey(it)] ?: Int.MAX_VALUE }
+                    .thenBy { homeHeroSessionSortKey(row, it, rotationSeed) }
+                    .thenBy { heroIdentityKey(it) }
+            )
+            add(RowCursor(items = orderedItems))
+        }
+    }
+
+    if (cursors.isEmpty()) return emptyList()
+
+    val result = mutableListOf<MetaPreview>()
+    while (result.size < limit) {
+        var addedAny = false
+        cursors.forEach { cursor ->
+            while (cursor.nextIndex < cursor.items.size) {
+                val item = cursor.items[cursor.nextIndex++]
+                val key = heroIdentityKey(item)
+                if (selectedKeys.add(key)) {
+                    result += item
+                    addedAny = true
+                    break
+                }
+            }
+            if (result.size >= limit) return result
+        }
+        if (!addedAny) break
+    }
+
+    return result
+}
+
+private fun buildHomeHeroRotationSeed(
+    startupStartedAtMs: Long,
+    today: LocalDate
+): Long {
+    return startupStartedAtMs xor today.toEpochDay()
+}
+
+private fun homeHeroSessionSortKey(
     row: CatalogRow,
-    item: MetaPreview
+    item: MetaPreview,
+    rotationSeed: Long
 ): Int {
-    return "${row.addonId}|${row.apiType}|${row.catalogId}|${item.id}".hashCode()
+    return buildString {
+        append(rotationSeed)
+        append('|')
+        append(row.addonId)
+        append('|')
+        append(row.apiType)
+        append('|')
+        append(row.catalogId)
+        append('|')
+        append(heroIdentityKey(item))
+    }.hashCode()
+}
+
+private fun heroIdentityKey(item: MetaPreview): String {
+    val apiType = item.apiType.lowercase()
+    val imdbId = item.imdbId?.trim()?.lowercase().orEmpty()
+    if (imdbId.isNotEmpty()) return "$apiType|imdb|$imdbId"
+
+    val slug = item.slug?.trim()?.lowercase().orEmpty()
+    if (slug.isNotEmpty()) return "$apiType|slug|$slug"
+
+    return "$apiType|id|${item.id}"
+}
+
+private fun positiveModulo(value: Int, divisor: Int): Int {
+    if (divisor == 0) return 0
+    val remainder = value % divisor
+    return if (remainder < 0) remainder + divisor else remainder
 }
 
 internal fun HomeViewModel.schedulePosterStatusReconcilePipeline(rows: List<CatalogRow>) {

@@ -225,6 +225,19 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
     apiType: String,
     fallbackYtId: String? = null
 ) {
+    val requestSignature = buildTrailerPreviewRequestSignature(
+        title = title,
+        releaseInfo = releaseInfo,
+        apiType = apiType,
+        fallbackYtId = fallbackYtId
+    )
+    val previousSignature = trailerPreviewRequestSignatures[itemId]
+    if (previousSignature != null && previousSignature != requestSignature) {
+        trailerPreviewNegativeCache.remove(itemId)
+        trailerPreviewLoadingIds.remove(itemId)
+    }
+    trailerPreviewRequestSignatures[itemId] = requestSignature
+
     if (trailerPreviewNegativeCache.contains(itemId)) return
     if (trailerPreviewUrlsState.containsKey(itemId)) return
     if (!trailerPreviewLoadingIds.add(itemId)) return
@@ -294,6 +307,23 @@ internal fun HomeViewModel.requestTrailerPreviewPipeline(
         }
 
         trailerPreviewLoadingIds.remove(itemId)
+    }
+}
+
+private fun buildTrailerPreviewRequestSignature(
+    title: String,
+    releaseInfo: String?,
+    apiType: String,
+    fallbackYtId: String?
+): String {
+    return buildString {
+        append(apiType.trim().lowercase())
+        append('|')
+        append(title.trim().lowercase())
+        append('|')
+        append(extractYear(releaseInfo).orEmpty())
+        append('|')
+        append(fallbackYtId?.trim().orEmpty())
     }
 }
 
