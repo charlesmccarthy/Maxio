@@ -37,6 +37,7 @@ class TmdbMetadataService @Inject constructor(
     // In-memory caches
     private val enrichmentCache = ConcurrentHashMap<String, TmdbEnrichment>()
     private val episodeCache = ConcurrentHashMap<String, Map<Pair<Int, Int>, TmdbEpisodeEnrichment>>()
+    private val episodeCastCache = ConcurrentHashMap<String, List<MetaCastMember>>()
     private val personCache = ConcurrentHashMap<String, PersonDetail>()
     private val moreLikeThisCache = ConcurrentHashMap<String, List<MetaPreview>>()
     private val entityHeaderCache = ConcurrentHashMap<String, TmdbEntityHeader>()
@@ -358,6 +359,89 @@ class TmdbMetadataService @Inject constructor(
             episodeCache[cacheKey] = result
         }
         result
+    }
+
+    suspend fun fetchEpisodeCastMembers(
+        tmdbId: String,
+        seasonNumber: Int,
+        episodeNumber: Int,
+        language: String = "en"
+    ): List<MetaCastMember> = withContext(Dispatchers.IO) {
+        val normalizedLanguage = normalizeTmdbLanguage(language)
+        val cacheKey = "$tmdbId:$seasonNumber:$episodeNumber:$normalizedLanguage"
+        episodeCastCache[cacheKey]?.let { return@withContext it }
+
+        val numericId = tmdbId.toIntOrNull() ?: return@withContext emptyList()
+
+        try {
+            val response = tmdbApi.getTvEpisodeCredits(
+                tvId = numericId,
+                seasonNumber = seasonNumber,
+                episodeNumber = episodeNumber,
+                apiKey = TMDB_API_KEY,
+                language = normalizedLanguage
+            )
+            val body = response.body() ?: return@withContext emptyList()
+
+            val directorMembers = body.crew
+                .orEmpty()
+                .filter { it.job.equals("Director", ignoreCase = true) }
+                .mapNotNull { member ->
+                    val tmdbPersonId = member.id ?: return@mapNotNull null
+                    val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    MetaCastMember(
+                        name = name,
+                        character = "Director",
+                        photo = buildImageUrl(member.profilePath, size = "w500"),
+                        tmdbId = tmdbPersonId
+                    )
+                }
+
+            val writerMembers = body.crew
+                .orEmpty()
+                .filter { crew ->
+                    val job = crew.job?.lowercase() ?: ""
+                    job.contains("writer") || job.contains("screenplay")
+                }
+                .mapNotNull { member ->
+                    val tmdbPersonId = member.id ?: return@mapNotNull null
+                    val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    MetaCastMember(
+                        name = name,
+                        character = "Writer",
+                        photo = buildImageUrl(member.profilePath, size = "w500"),
+                        tmdbId = tmdbPersonId
+                    )
+                }
+
+            val castMembers = body.cast
+                .orEmpty()
+                .mapNotNull { member ->
+                    val name = member.name?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    MetaCastMember(
+                        name = name,
+                        character = member.character?.takeIf { it.isNotBlank() },
+                        photo = buildImageUrl(member.profilePath, size = "w500"),
+                        tmdbId = member.id
+                    )
+                }
+
+            val result = buildList {
+                addAll(directorMembers)
+                addAll(writerMembers)
+                addAll(castMembers)
+            }
+                .filter { it.name.isNotBlank() }
+                .distinctBy { it.tmdbId ?: (it.name.lowercase() + "|" + (it.character ?: "")) }
+
+            if (result.isNotEmpty()) {
+                episodeCastCache[cacheKey] = result
+            }
+            result
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to fetch TMDB episode credits S$seasonNumber E$episodeNumber: ${e.message}")
+            emptyList()
+        }
     }
 
     suspend fun fetchMoreLikeThis(

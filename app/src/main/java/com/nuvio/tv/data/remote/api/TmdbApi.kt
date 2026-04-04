@@ -134,6 +134,15 @@ interface TmdbApi {
         @Query("language") language: String? = null
     ): Response<TmdbSeasonResponse>
 
+    @GET("tv/{tv_id}/season/{season_number}/episode/{episode_number}/credits")
+    suspend fun getTvEpisodeCredits(
+        @Path("tv_id") tvId: Int,
+        @Path("season_number") seasonNumber: Int,
+        @Path("episode_number") episodeNumber: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null
+    ): Response<TmdbCreditsResponse>
+
     @GET("person/{person_id}")
     suspend fun getPersonDetails(
         @Path("person_id") personId: Int,

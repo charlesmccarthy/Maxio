@@ -658,6 +658,7 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(stream: Stream, force
     recomputeNextEpisode(resetVisibility = true)
 
     updateEpisodeDescription()
+    refreshCastForCurrentPlayback()
 
     playbackStartedForParentalGuide = false
     skipIntervals = emptyList()

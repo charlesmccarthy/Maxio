@@ -34,8 +34,87 @@ internal fun PlayerRuntimeController.fetchMetaDetails(id: String?, type: String?
             }
         }
 
-        // Enrich cast from TMDB when addon metadata is sparse so the player can
-        // show a fuller cast list without discarding addon-provided ordering.
+        val season = currentSeason
+        val episode = currentEpisode
+        val hasEpisodeContext = type.lowercase() in listOf("series", "tv") &&
+            season != null &&
+            episode != null
+
+        if (hasEpisodeContext) {
+            fetchTmdbEpisodeCast(
+                id = id,
+                type = type,
+                season = season,
+                episode = episode
+            )
+        } else if (shouldEnrichPlayerCast(_uiState.value.castMembers)) {
+            // Enrich cast from TMDB when addon metadata is sparse so the player can
+            // show a fuller cast list without discarding addon-provided ordering.
+            fetchTmdbCast(id, type)
+        }
+    }
+}
+
+internal fun PlayerRuntimeController.refreshCastForCurrentPlayback() {
+    val id = contentId ?: return
+    val type = contentType ?: return
+
+    scope.launch {
+        val season = currentSeason
+        val episode = currentEpisode
+        val hasEpisodeContext = type.lowercase() in listOf("series", "tv") &&
+            season != null &&
+            episode != null
+
+        if (hasEpisodeContext) {
+            fetchTmdbEpisodeCast(
+                id = id,
+                type = type,
+                season = season,
+                episode = episode
+            )
+        } else if (shouldEnrichPlayerCast(_uiState.value.castMembers)) {
+            fetchTmdbCast(id, type)
+        }
+    }
+}
+
+private suspend fun PlayerRuntimeController.fetchTmdbEpisodeCast(
+    id: String,
+    type: String,
+    season: Int,
+    episode: Int
+) {
+    try {
+        val tmdbType = when (type.lowercase()) {
+            "series", "tv" -> "tv"
+            else -> return
+        }
+        val tmdbId = withContext(Dispatchers.IO) {
+            tmdbService.ensureTmdbId(id, tmdbType)
+        } ?: return
+
+        val episodeCastMembers = withContext(Dispatchers.IO) {
+            tmdbMetadataService.fetchEpisodeCastMembers(
+                tmdbId = tmdbId,
+                seasonNumber = season,
+                episodeNumber = episode
+            )
+        }
+
+        if (episodeCastMembers.isNotEmpty()) {
+            _uiState.update { state ->
+                val normalizedCast = episodeCastMembers.take(PLAYER_CAST_TARGET_COUNT)
+                if (normalizedCast != state.castMembers) {
+                    state.copy(castMembers = normalizedCast)
+                } else {
+                    state
+                }
+            }
+        } else if (shouldEnrichPlayerCast(_uiState.value.castMembers)) {
+            fetchTmdbCast(id, type)
+        }
+    } catch (_: Exception) {
         if (shouldEnrichPlayerCast(_uiState.value.castMembers)) {
             fetchTmdbCast(id, type)
         }
