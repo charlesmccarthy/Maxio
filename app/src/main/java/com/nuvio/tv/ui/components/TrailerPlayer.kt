@@ -23,6 +23,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -70,6 +71,12 @@ fun TrailerPlayer(
     val currentOnRemoteKey by rememberUpdatedState(onRemoteKey)
     val zoomScale = if (cropToFill) overscanZoom.coerceAtLeast(1f) else 1f
     var hasRenderedFirstFrame by remember(trailerUrl) { mutableStateOf(false) }
+    val trailerAudioAttributes = remember {
+        AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+    }
     val playerAlphaState = animateFloatAsState(
         targetValue = if (isPlaying && hasRenderedFirstFrame) 1f else 0f,
         animationSpec = tween(durationMillis = 300),
@@ -92,6 +99,8 @@ fun TrailerPlayer(
                 .build()
                 .apply {
                     repeatMode = Player.REPEAT_MODE_OFF
+                    setAudioAttributes(trailerAudioAttributes, !muted)
+                    setHandleAudioBecomingNoisy(true)
                     volume = if (muted) 0f else 1f
                     videoScalingMode = if (cropToFill) {
                         C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
@@ -107,6 +116,7 @@ fun TrailerPlayer(
 
     LaunchedEffect(isPlaying, trailerUrl, trailerAudioUrl, muted) {
         val player = trailerPlayer ?: return@LaunchedEffect
+        player.setAudioAttributes(trailerAudioAttributes, !muted)
         player.volume = if (muted) 0f else 1f
         if (isPlaying && trailerUrl != null) {
             hasRenderedFirstFrame = false
