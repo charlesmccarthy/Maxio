@@ -95,6 +95,10 @@ class PlayerViewModel @Inject constructor(
         controller.hideControls()
     }
 
+    fun pauseForSecondaryNavigation() {
+        controller.pauseForSecondaryNavigation()
+    }
+
     fun setControlsAutoHidePaused(paused: Boolean) {
         controller.setControlsAutoHidePaused(paused)
     }

@@ -417,6 +417,25 @@ fun PlayerRuntimeController.hideControls() {
     _uiState.update { it.copy(showControls = false, showSeekOverlay = false, showMoreDialog = false) }
 }
 
+fun PlayerRuntimeController.pauseForSecondaryNavigation() {
+    hideControlsJob?.cancel()
+    cancelPauseOverlay()
+    userPausedManually = true
+    _exoPlayer?.let { player ->
+        player.playWhenReady = false
+        player.pause()
+    }
+    notifyAudioSessionUpdate(false)
+    _uiState.update {
+        it.copy(
+            showControls = false,
+            showSeekOverlay = false,
+            showMoreDialog = false,
+            showPauseOverlay = false
+        )
+    }
+}
+
 fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
     onUserInteraction()
     when (event) {
@@ -428,6 +447,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                     schedulePauseOverlay()
                 } else {
                     userPausedManually = false
+                    notifyAudioSessionUpdate(true)
                     cancelPauseOverlay()
                     player.play()
                 }

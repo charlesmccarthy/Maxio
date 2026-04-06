@@ -777,7 +777,10 @@ fun PlayerScreen(
                 onHideControls = { viewModel.hideControls() },
                 onBack = { exitPlayer() },
                 skipButtonVisible = skipButtonActuallyVisible,
-                onCastMemberClick = onNavigateToCastDetail
+                onCastMemberClick = { personId, personName, preferCrew ->
+                    viewModel.pauseForSecondaryNavigation()
+                    onNavigateToCastDetail(personId, personName, preferCrew)
+                }
             )
         }
 
