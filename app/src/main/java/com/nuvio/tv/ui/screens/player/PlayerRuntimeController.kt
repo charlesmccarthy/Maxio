@@ -189,6 +189,8 @@ class PlayerRuntimeController(
     internal var sourceStreamsCacheRequestKey: String? = null
     internal var hostActivityRef: WeakReference<Activity>? = null
     internal var initialPlaybackStarted: Boolean = false
+    internal var releasedForSecondaryNavigation: Boolean = false
+    internal var deferAutoplayUntilExplicitResume: Boolean = false
     
     
     internal var lastSavedPosition: Long = 0L

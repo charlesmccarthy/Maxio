@@ -208,6 +208,7 @@ internal fun PlayerRuntimeController.initializePlayer(url: String, headers: Map<
             libassPipelineSwitchInFlight = false
 
             _exoPlayer?.apply {
+                val shouldAutoplay = !deferAutoplayUntilExplicitResume
                 
                 val audioAttributes = AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -251,8 +252,9 @@ internal fun PlayerRuntimeController.initializePlayer(url: String, headers: Map<
                         mimeTypeOverride = currentStreamMimeType
                     )
                 )
-                playWhenReady = true
+                playWhenReady = shouldAutoplay
                 prepare()
+                deferAutoplayUntilExplicitResume = false
 
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -283,7 +285,7 @@ internal fun PlayerRuntimeController.initializePlayer(url: String, headers: Map<
                         if (playbackState == Player.STATE_READY) {
                             if (shouldEnforceAutoplayOnFirstReady) {
                                 shouldEnforceAutoplayOnFirstReady = false
-                                if (!userPausedManually && !isPlaying) {
+                                if (!userPausedManually && !deferAutoplayUntilExplicitResume && !isPlaying) {
                                     if (!playWhenReady) {
                                         playWhenReady = true
                                     }

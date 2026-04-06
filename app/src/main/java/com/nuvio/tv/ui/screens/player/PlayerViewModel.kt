@@ -111,6 +111,10 @@ class PlayerViewModel @Inject constructor(
         controller.startInitialPlaybackIfNeeded()
     }
 
+    fun resumePlaybackAfterSecondaryNavigationIfNeeded() {
+        controller.resumePlaybackAfterSecondaryNavigationIfNeeded()
+    }
+
     fun onEvent(event: PlayerEvent) {
         controller.onEvent(event)
     }
