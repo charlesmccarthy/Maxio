@@ -88,43 +88,52 @@ fun TmdbEntityBrowseScreen(
             .background(NuvioColors.Background)
     ) {
         Crossfade(
-            targetState = uiState,
+            targetState = when (uiState) {
+                TmdbEntityBrowseUiState.Loading -> "loading"
+                is TmdbEntityBrowseUiState.Error -> "error"
+                is TmdbEntityBrowseUiState.Success -> "success"
+            },
             label = "TmdbEntityBrowseState"
-        ) { state ->
-            when (state) {
-                TmdbEntityBrowseUiState.Loading -> {
+        ) { stateKey ->
+            when (stateKey) {
+                "loading" -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         LoadingIndicator()
                     }
                 }
 
-                is TmdbEntityBrowseUiState.Error -> {
+                "error" -> {
+                    val errorState = uiState as? TmdbEntityBrowseUiState.Error
                     ErrorState(
-                        message = state.message.ifBlank { "Could not load TMDB entity" },
+                        message = errorState?.message?.ifBlank { "Could not load TMDB entity" }
+                            ?: "Could not load TMDB entity",
                         onRetry = { viewModel.retry() }
                     )
                 }
 
-                is TmdbEntityBrowseUiState.Success -> {
-                    TmdbEntityBrowseContent(
-                        data = state.data,
-                        sourceType = viewModel.sourceType,
-                        trailerPreviewUrls = viewModel.trailerPreviewUrls,
-                        trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
-                        logoOverrides = viewModel.logoUrls,
-                        trailerEnabled = viewModel.trailerEnabled,
-                        trailerMuted = viewModel.trailerMuted,
-                        onItemClick = { item ->
-                            viewModel.storeActiveTrailer(item)
-                            onNavigateToDetail(item.id, item.apiType, null)
-                        },
-                        onRequestTrailerPreview = viewModel::requestTrailerPreview,
-                        onRequestLogo = viewModel::requestLogo,
-                        onTrailerProgressChanged = viewModel::onTrailerProgressChanged,
-                        onLoadMoreRail = { mediaType, railType ->
-                            viewModel.loadMoreRail(mediaType = mediaType, railType = railType)
-                        }
-                    )
+                "success" -> {
+                    val successState = uiState as? TmdbEntityBrowseUiState.Success
+                    if (successState != null) {
+                        TmdbEntityBrowseContent(
+                            data = successState.data,
+                            sourceType = viewModel.sourceType,
+                            trailerPreviewUrls = viewModel.trailerPreviewUrls,
+                            trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
+                            logoOverrides = viewModel.logoUrls,
+                            trailerEnabled = viewModel.trailerEnabled,
+                            trailerMuted = viewModel.trailerMuted,
+                            onItemClick = { item ->
+                                viewModel.storeActiveTrailer(item)
+                                onNavigateToDetail(item.id, item.apiType, null)
+                            },
+                            onRequestTrailerPreview = viewModel::requestTrailerPreview,
+                            onRequestLogo = viewModel::requestLogo,
+                            onTrailerProgressChanged = viewModel::onTrailerProgressChanged,
+                            onLoadMoreRail = { mediaType, railType ->
+                                viewModel.loadMoreRail(mediaType = mediaType, railType = railType)
+                            }
+                        )
+                    }
                 }
             }
         }
