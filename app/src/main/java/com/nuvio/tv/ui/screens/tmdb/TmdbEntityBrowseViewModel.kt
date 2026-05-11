@@ -70,6 +70,29 @@ class TmdbEntityBrowseViewModel @Inject constructor(
     var trailerMuted: Boolean = true
         private set
 
+    // Focus restore state — lives in ViewModel so it survives recomposition
+    val focusedIndexByRail = mutableMapOf<String, Int>()
+    var pendingRestoreItemId: String? = null
+    var lastRestoreToken: Int = 0
+
+    fun onItemClicked(railKey: String, itemIndex: Int, itemId: String) {
+        focusedIndexByRail[railKey] = itemIndex
+        pendingRestoreItemId = itemId
+    }
+
+    fun onFocusedIndexChanged(railKey: String, index: Int) {
+        focusedIndexByRail[railKey] = index
+    }
+
+    fun consumeRestore(): Int {
+        lastRestoreToken++
+        return lastRestoreToken
+    }
+
+    fun clearPendingRestore() {
+        pendingRestoreItemId = null
+    }
+
     private var lastTrailerItemId: String? = null
     private var lastTrailerPositionMs: Long = 0L
 

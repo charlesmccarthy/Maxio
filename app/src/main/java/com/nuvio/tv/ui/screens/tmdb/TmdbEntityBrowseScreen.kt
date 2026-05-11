@@ -122,10 +122,16 @@ fun TmdbEntityBrowseScreen(
                             logoOverrides = viewModel.logoUrls,
                             trailerEnabled = viewModel.trailerEnabled,
                             trailerMuted = viewModel.trailerMuted,
-                            onItemClick = { item ->
+                            focusedIndexByRail = viewModel.focusedIndexByRail,
+                            pendingRestoreItemId = viewModel.pendingRestoreItemId,
+                            onItemClick = { rail, item, index ->
+                                val railKey = "${rail.mediaType.value}_${rail.railType.value}"
+                                viewModel.onItemClicked(railKey, index, item.id)
                                 viewModel.storeActiveTrailer(item)
                                 onNavigateToDetail(item.id, item.apiType, null)
                             },
+                            onFocusedIndexChanged = viewModel::onFocusedIndexChanged,
+                            onRestoreHandled = viewModel::clearPendingRestore,
                             onRequestTrailerPreview = viewModel::requestTrailerPreview,
                             onRequestLogo = viewModel::requestLogo,
                             onTrailerProgressChanged = viewModel::onTrailerProgressChanged,
@@ -150,19 +156,23 @@ private fun TmdbEntityBrowseContent(
     logoOverrides: Map<String, String>,
     trailerEnabled: Boolean,
     trailerMuted: Boolean,
-    onItemClick: (MetaPreview) -> Unit,
+    focusedIndexByRail: Map<String, Int>,
+    pendingRestoreItemId: String?,
+    onItemClick: (TmdbEntityRail, MetaPreview, Int) -> Unit,
+    onFocusedIndexChanged: (String, Int) -> Unit,
+    onRestoreHandled: () -> Unit,
     onRequestTrailerPreview: (MetaPreview) -> Unit,
     onRequestLogo: (MetaPreview) -> Unit,
     onTrailerProgressChanged: (String, Long) -> Unit,
     onLoadMoreRail: (TmdbEntityMediaType, TmdbEntityRailType) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    var pendingRestoreItemId by rememberSaveable(data.header.id) { mutableStateOf<String?>(null) }
     var restoreFocusToken by rememberSaveable(data.header.id) { mutableIntStateOf(0) }
+    val currentPendingRestoreItemId by androidx.compose.runtime.rememberUpdatedState(pendingRestoreItemId)
 
-    DisposableEffect(lifecycleOwner, pendingRestoreItemId) {
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && pendingRestoreItemId != null) {
+            if (event == Lifecycle.Event.ON_RESUME && currentPendingRestoreItemId != null) {
                 restoreFocusToken += 1
             }
         }
@@ -172,17 +182,8 @@ private fun TmdbEntityBrowseContent(
         }
     }
 
-    LaunchedEffect(restoreFocusToken, pendingRestoreItemId, data.rails) {
-        val restoreId = pendingRestoreItemId ?: return@LaunchedEffect
-        if (restoreFocusToken <= 0) return@LaunchedEffect
-        if (data.rails.none { rail -> rail.items.any { it.id == restoreId } }) {
-            pendingRestoreItemId = null
-        }
-    }
-
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val localDensity = LocalDensity.current
-    val focusedItemIndexByRail = remember { mutableMapOf<String, Int>() }
     val backgroundRequest = rememberBackgroundRequest(
         data = data,
         sourceType = sourceType
@@ -250,7 +251,7 @@ private fun TmdbEntityBrowseContent(
                             val railKey = "${rail.mediaType.value}_${rail.railType.value}"
                             EntityRailRow(
                                 rail = rail,
-                                rememberedFocusedIndex = focusedItemIndexByRail[railKey] ?: 0,
+                                rememberedFocusedIndex = focusedIndexByRail[railKey] ?: 0,
                                 trailerPreviewUrls = trailerPreviewUrls,
                                 trailerPreviewAudioUrls = trailerPreviewAudioUrls,
                                 logoOverrides = logoOverrides,
@@ -258,15 +259,15 @@ private fun TmdbEntityBrowseContent(
                                 trailerMuted = trailerMuted,
                                 restoreItemId = pendingRestoreItemId,
                                 restoreFocusToken = restoreFocusToken,
-                                onRestoreFocusHandled = { pendingRestoreItemId = null },
+                                onRestoreFocusHandled = onRestoreHandled,
                                 onFocusedItemIndexChanged = { focusedIndex ->
-                                    focusedItemIndexByRail[railKey] = focusedIndex
+                                    onFocusedIndexChanged(railKey, focusedIndex)
                                 },
                                 onRequestTrailerPreview = onRequestTrailerPreview,
                                 onRequestLogo = onRequestLogo,
                                 onItemClick = { item ->
-                                    pendingRestoreItemId = item.id
-                                    onItemClick(item)
+                                    val idx = rail.items.indexOfFirst { it.id == item.id }
+                                    onItemClick(rail, item, idx.coerceAtLeast(0))
                                 },
                                 onTrailerProgressChanged = onTrailerProgressChanged,
                                 onLoadMore = onLoadMoreRail
@@ -439,7 +440,8 @@ private fun EntityRailRow(
 
     LaunchedEffect(restoreItemId, restoreFocusToken, restoreIndex) {
         if (restoreFocusToken <= 0 || restoreIndex < 0) return@LaunchedEffect
-        repeat(2) { withFrameNanos { } }
+        // Wait for NetflixStyleRow to process the initialSelectedIndex change first
+        repeat(4) { withFrameNanos { } }
         runCatching { rowFocusRequester.requestFocus() }
         onRestoreFocusHandled()
     }
