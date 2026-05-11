@@ -584,7 +584,9 @@ class DiscoveryViewModel @Inject constructor(
                 apiKey = TMDB_API_KEY,
                 language = language
             )
-            response.body()?.results.orEmpty().map { it.toMetaPreview(mediaType) }
+            response.body()?.results.orEmpty()
+                .filter { it.originalLanguage == "en" }
+                .map { it.toMetaPreview(mediaType) }
         } catch (e: Exception) {
             Log.w(TAG, "Trending fetch failed", e)
             emptyList()
@@ -611,14 +613,16 @@ class DiscoveryViewModel @Inject constructor(
                     apiKey = TMDB_API_KEY,
                     language = language,
                     sortBy = "vote_average.desc",
-                    voteCountGte = 1000
+                    voteCountGte = 1000,
+                    withOriginalLanguage = "en"
                 )
             } else {
                 tmdbApi.discoverTv(
                     apiKey = TMDB_API_KEY,
                     language = language,
                     sortBy = "vote_average.desc",
-                    voteCountGte = 500
+                    voteCountGte = 500,
+                    withOriginalLanguage = "en"
                 )
             }
             response.body()?.results.orEmpty().map { it.toMetaPreview(mediaType) }
@@ -648,7 +652,8 @@ class DiscoveryViewModel @Inject constructor(
                     language = language,
                     sortBy = "release_date.desc",
                     releaseDateLte = today,
-                    voteCountGte = 50
+                    voteCountGte = 50,
+                    withOriginalLanguage = "en"
                 )
             } else {
                 tmdbApi.discoverTv(
@@ -656,7 +661,8 @@ class DiscoveryViewModel @Inject constructor(
                     language = language,
                     sortBy = "first_air_date.desc",
                     firstAirDateLte = today,
-                    voteCountGte = 50
+                    voteCountGte = 50,
+                    withOriginalLanguage = "en"
                 )
             }
             response.body()?.results.orEmpty().map { it.toMetaPreview(mediaType) }
@@ -704,6 +710,7 @@ class DiscoveryViewModel @Inject constructor(
                     sortBy = "vote_average.desc",
                     voteCountGte = 100,
                     voteAverageGte = 7.5,
+                    withOriginalLanguage = "en",
                     page = (1..5).random()
                 )
             } else {
@@ -713,6 +720,7 @@ class DiscoveryViewModel @Inject constructor(
                     sortBy = "vote_average.desc",
                     voteCountGte = 100,
                     voteAverageGte = 7.5,
+                    withOriginalLanguage = "en",
                     page = (1..5).random()
                 )
             }
@@ -752,7 +760,8 @@ class DiscoveryViewModel @Inject constructor(
                     sortBy = "vote_average.desc",
                     primaryReleaseDateGte = "$startYear-01-01",
                     primaryReleaseDateLte = "$endYear-12-31",
-                    voteCountGte = 500
+                    voteCountGte = 500,
+                    withOriginalLanguage = "en"
                 )
             } else {
                 tmdbApi.discoverTv(
@@ -761,7 +770,8 @@ class DiscoveryViewModel @Inject constructor(
                     sortBy = "vote_average.desc",
                     firstAirDateGte = "$startYear-01-01",
                     firstAirDateLte = "$endYear-12-31",
-                    voteCountGte = 200
+                    voteCountGte = 200,
+                    withOriginalLanguage = "en"
                 )
             }
             response.body()?.results.orEmpty().map { it.toMetaPreview(mediaType) }
@@ -798,7 +808,9 @@ class DiscoveryViewModel @Inject constructor(
         firstAirDateGte: String? = null,
         voteCountGte: Int? = null,
         voteAverageGte: Double? = null,
-        withGenres: String? = null
+        withGenres: String? = null,
+        withoutGenres: String? = null,
+        withOriginalLanguage: String? = null
     ): List<MetaPreview> {
         return try {
             val mediaType = if (isMovie) "movie" else "series"
@@ -814,7 +826,9 @@ class DiscoveryViewModel @Inject constructor(
                     primaryReleaseDateLte = primaryReleaseDateLte,
                     voteCountGte = voteCountGte,
                     voteAverageGte = voteAverageGte,
-                    withGenres = withGenres
+                    withGenres = withGenres,
+                    withoutGenres = withoutGenres,
+                    withOriginalLanguage = withOriginalLanguage ?: "en"
                 )
             } else {
                 tmdbApi.discoverTv(
@@ -826,7 +840,9 @@ class DiscoveryViewModel @Inject constructor(
                     firstAirDateGte = firstAirDateGte,
                     voteCountGte = voteCountGte,
                     voteAverageGte = voteAverageGte,
-                    withGenres = withGenres
+                    withGenres = withGenres,
+                    withoutGenres = withoutGenres,
+                    withOriginalLanguage = withOriginalLanguage ?: "en"
                 )
             }
             response.body()?.results.orEmpty().map { it.toMetaPreview(mediaType) }

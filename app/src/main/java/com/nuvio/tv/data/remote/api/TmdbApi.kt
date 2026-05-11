@@ -183,6 +183,8 @@ interface TmdbApi {
         @Query("vote_count.gte") voteCountGte: Int? = null,
         @Query("vote_average.gte") voteAverageGte: Double? = null,
         @Query("with_genres") withGenres: String? = null,
+        @Query("without_genres") withoutGenres: String? = null,
+        @Query("with_original_language") withOriginalLanguage: String? = null,
         @Query("with_runtime.gte") withRuntimeGte: Int? = null,
         @Query("with_runtime.lte") withRuntimeLte: Int? = null
     ): Response<TmdbDiscoverResponse>
@@ -199,7 +201,9 @@ interface TmdbApi {
         @Query("first_air_date.gte") firstAirDateGte: String? = null,
         @Query("vote_count.gte") voteCountGte: Int? = null,
         @Query("vote_average.gte") voteAverageGte: Double? = null,
-        @Query("with_genres") withGenres: String? = null
+        @Query("with_genres") withGenres: String? = null,
+        @Query("without_genres") withoutGenres: String? = null,
+        @Query("with_original_language") withOriginalLanguage: String? = null
     ): Response<TmdbDiscoverResponse>
 
     @GET("trending/{media_type}/{time_window}")
@@ -454,7 +458,8 @@ data class TmdbDiscoverResult(
     @Json(name = "first_air_date") val firstAirDate: String? = null,
     @Json(name = "vote_average") val voteAverage: Double? = null,
     @Json(name = "vote_count") val voteCount: Int? = null,
-    @Json(name = "popularity") val popularity: Double? = null
+    @Json(name = "popularity") val popularity: Double? = null,
+    @Json(name = "original_language") val originalLanguage: String? = null
 )
 
 @JsonClass(generateAdapter = true)
