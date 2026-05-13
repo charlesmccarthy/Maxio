@@ -228,10 +228,16 @@ object AddonWebPage {
   .addon-url {
     font-size: 0.75rem;
     color: rgba(255, 255, 255, 0.25);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     margin-top: 0.15rem;
+    word-break: break-all;
+  }
+  .addon-url a {
+    color: rgba(100, 160, 255, 0.7);
+    text-decoration: none;
+  }
+  .addon-url a:hover {
+    color: rgba(130, 180, 255, 1);
+    text-decoration: underline;
   }
   .addon-desc {
     font-size: 0.8rem;
@@ -505,7 +511,7 @@ function renderAddons() {
           (addon.isNew ? '<span class="badge-new">New</span>' : '') +
         '</div>' +
         (addon.description ? '<div class="addon-desc">' + escapeHtml(addon.description) + '</div>' : '') +
-        '<div class="addon-url">' + escapeHtml(addon.url) + '</div>' +
+        '<div class="addon-url"><a href="' + escapeHtml(addon.url) + '" target="_blank">' + escapeHtml(addon.url) + '</a></div>' +
       '</div>' +
       '<div class="addon-actions">' +
         '<button class="btn btn-remove" onclick="removeAddon(' + i + ')">Remove</button>' +
