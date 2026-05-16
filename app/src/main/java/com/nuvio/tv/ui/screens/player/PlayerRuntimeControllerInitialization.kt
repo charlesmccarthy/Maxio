@@ -347,8 +347,21 @@ internal fun PlayerRuntimeController.initializePlayer(url: String, headers: Map<
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        val detailedError = buildString {
-                            append(error.message ?: "Playback error")
+                        val rawMessage = error.message ?: ""
+                        // Some release groups (10-bit x265 QxR/ImE/PSA etc.) mux
+                        // MKV tracks with zlib content compression (ContentCompAlgo
+                        // 0/1/2). media3's MatroskaExtractor only supports header
+                        // stripping (algo 3), so it can't read those files. This
+                        // is a player/file limitation, not a source problem — give
+                        // an actionable message instead of the cryptic parser one.
+                        val isUnsupportedContainer =
+                            rawMessage.contains("ContentCompAlgo", ignoreCase = true) ||
+                                rawMessage.contains("ContentEncodingOrder", ignoreCase = true)
+                        val detailedError = if (isUnsupportedContainer) {
+                            "This release uses a compressed format this player can't read. " +
+                                "Pick a different stream — a standard x264 release will play."
+                        } else buildString {
+                            append(rawMessage.ifBlank { "Playback error" })
                             val cause = error.cause
                             if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
                                 append(" (HTTP ${cause.responseCode})")

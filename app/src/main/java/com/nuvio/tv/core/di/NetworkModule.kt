@@ -17,6 +17,7 @@ import com.nuvio.tv.data.remote.api.MDBListApi
 import com.nuvio.tv.data.remote.api.ParentalGuideApi
 import com.nuvio.tv.data.remote.api.SeriesGraphApi
 import com.nuvio.tv.data.remote.api.TmdbApi
+import com.nuvio.tv.data.remote.api.TorrentioApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.Module
@@ -343,6 +344,23 @@ object NetworkModule {
     @Singleton
     fun provideSeriesGraphApi(@Named("seriesGraph") retrofit: Retrofit): SeriesGraphApi =
         retrofit.create(SeriesGraphApi::class.java)
+
+    // --- Torrentio API (for built-in debrid) ---
+
+    @Provides
+    @Singleton
+    @Named("torrentio")
+    fun provideTorrentioRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
+        Retrofit.Builder()
+            .baseUrl("https://torrentio.strem.fun/")
+            .client(okHttpClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+
+    @Provides
+    @Singleton
+    fun provideTorrentioApi(@Named("torrentio") retrofit: Retrofit): TorrentioApi =
+        retrofit.create(TorrentioApi::class.java)
 
     @Provides
     @Singleton

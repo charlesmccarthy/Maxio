@@ -7,6 +7,7 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.tmdb.TmdbService
+import com.nuvio.tv.domain.debrid.DebridStreamSource
 import com.nuvio.tv.data.mapper.toDomain
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.domain.model.Addon
@@ -35,7 +36,8 @@ class StreamRepositoryImpl @Inject constructor(
     private val api: AddonApi,
     private val addonRepository: AddonRepository,
     private val pluginManager: PluginManager,
-    private val tmdbService: TmdbService
+    private val tmdbService: TmdbService,
+    private val debridStreamSource: DebridStreamSource
 ) : StreamRepository {
     private enum class StreamFailureKind {
         MISSING,
@@ -72,15 +74,18 @@ class StreamRepositoryImpl @Inject constructor(
                 mutableListOf<StreamAttemptFailure>()
             )
 
+            // Check if debrid is enabled
+            val debridEnabled = try { debridStreamSource.isEnabled() } catch (_: Exception) { false }
+
             // Accumulate results as they arrive
             val accumulatedResults = mutableListOf<AddonStreams>()
 
             coroutineScope {
                 // Channel to receive results as they complete
                 val resultChannel = Channel<AddonStreams>(Channel.UNLIMITED)
-                
+
                 // Track number of pending jobs
-                val totalJobs = streamAddons.size + (if (tmdbId != null) 1 else 0)
+                val totalJobs = streamAddons.size + (if (tmdbId != null) 1 else 0) + (if (debridEnabled) 1 else 0)
                 var completedJobs = 0
 
                 // Launch addon jobs
@@ -141,6 +146,30 @@ class StreamRepositoryImpl @Inject constructor(
                         } catch (e: Exception) {
                             if (e is CancellationException) throw e
                             Log.e(TAG, "Plugin execution failed: ${e.message}")
+                            completedJobs++
+                            if (completedJobs >= totalJobs) {
+                                resultChannel.close()
+                            }
+                        }
+                    }
+                }
+
+                // Launch debrid job
+                if (debridEnabled) {
+                    launch {
+                        try {
+                            debridStreamSource.fetchAll(
+                                type = type,
+                                imdbId = videoId.substringBefore(":"),
+                                season = season,
+                                episode = episode
+                            ) { addonStreams ->
+                                resultChannel.send(addonStreams)
+                            }
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            Log.e(TAG, "Debrid stream fetch failed: ${e.message}")
+                        } finally {
                             completedJobs++
                             if (completedJobs >= totalJobs) {
                                 resultChannel.close()
