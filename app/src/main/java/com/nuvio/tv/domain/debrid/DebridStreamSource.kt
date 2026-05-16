@@ -142,9 +142,13 @@ class DebridStreamSource @Inject constructor(
                 val sizeText = formatSize(ts.behaviorHints?.videoSize)
                     ?: extractSizeFromText(ts.description)
                     ?: extractSizeFromText(ts.title)
+                // Torbox mixes torrent + usenet in one response; surface which
+                // it is (plus age/seeders) so the user can prefer usenet.
+                val sourceKind = extractSourceKind(ts.description, ts.title)
                 val displayDescription = listOfNotNull(
                     sourceLabel?.takeIf { it != displayName },
-                    sizeText
+                    sizeText,
+                    sourceKind
                 ).joinToString(" • ").takeIf { it.isNotBlank() }
 
                 Stream(
@@ -178,6 +182,38 @@ class DebridStreamSource @Inject constructor(
         if (gb >= 1.0) return "%.2f GB".format(gb)
         val mb = bytes / 1_000_000.0
         return "%.0f MB".format(mb)
+    }
+
+    /**
+     * Builds a short source indicator from Torbox/Torrentio metadata:
+     *  - Torbox desc has "Type: Usenet | Age: 9d" or "Type: Torrent | Seeders: 30"
+     *  - Torrentio title has a seeder marker ("👤 30") — always torrent
+     * Returns e.g. "📡 Usenet · 9d", "🌱 Torrent · 30 seeders", or null.
+     */
+    private fun extractSourceKind(description: String?, title: String?): String? {
+        val text = listOfNotNull(description, title).joinToString("\n")
+        if (text.isBlank()) return null
+
+        val type = Regex("Type:\\s*(Usenet|Torrent)", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.lowercase()
+
+        when (type) {
+            "usenet" -> {
+                val age = Regex("Age:\\s*([0-9]+\\s*[a-zA-Z]+)", RegexOption.IGNORE_CASE)
+                    .find(text)?.groupValues?.get(1)?.replace(" ", "")
+                return "📡 Usenet" + (age?.let { " · $it" } ?: "")
+            }
+            "torrent" -> {
+                val seeders = Regex("Seeders:\\s*([0-9]+)", RegexOption.IGNORE_CASE)
+                    .find(text)?.groupValues?.get(1)
+                return "🌱 Torrent" + (seeders?.let { " · $it seeders" } ?: "")
+            }
+        }
+
+        // Torrentio has no explicit Type; a seeder marker means torrent.
+        val seeders = Regex("👤\\s*([0-9]+)").find(text)?.groupValues?.get(1)
+        if (seeders != null) return "🌱 Torrent · $seeders seeders"
+        return null
     }
 
     /** Pulls a size like "9GB", "1.5 GiB", "750 MB" out of free text. */
