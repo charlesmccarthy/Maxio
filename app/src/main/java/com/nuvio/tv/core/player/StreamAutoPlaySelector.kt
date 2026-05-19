@@ -6,15 +6,22 @@ import com.nuvio.tv.domain.model.AddonStreams
 import com.nuvio.tv.domain.model.Stream
 
 object StreamAutoPlaySelector {
+    /** Built-in debrid sources are labeled "Debrid (<service>)". */
+    fun isDebridSource(addonName: String): Boolean =
+        addonName.startsWith("Debrid (")
+
     fun orderAddonStreams(
         streams: List<AddonStreams>,
         installedOrder: List<String>
     ): List<AddonStreams> {
         if (streams.isEmpty()) return streams
 
-        val (addonEntries, pluginEntries) = streams.partition { it.addonName in installedOrder }
+        // Built-in debrid always comes first, then installed addons in their
+        // configured order, then everything else (plugins/scrapers).
+        val (debridEntries, rest) = streams.partition { isDebridSource(it.addonName) }
+        val (addonEntries, pluginEntries) = rest.partition { it.addonName in installedOrder }
         val orderedAddons = addonEntries.sortedBy { installedOrder.indexOf(it.addonName) }
-        return orderedAddons + pluginEntries
+        return debridEntries + orderedAddons + pluginEntries
     }
 
     private fun resolvePlayableUrl(stream: Stream): String? {

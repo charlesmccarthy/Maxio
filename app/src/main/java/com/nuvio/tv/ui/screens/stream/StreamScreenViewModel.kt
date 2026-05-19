@@ -52,6 +52,7 @@ class StreamScreenViewModel @Inject constructor(
     private val playerSettingsDataStore: PlayerSettingsDataStore,
     private val streamLinkCacheDataStore: StreamLinkCacheDataStore,
     private val streamPrefetchCache: StreamPrefetchCache,
+    private val debridStreamSource: com.nuvio.tv.domain.debrid.DebridStreamSource,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private var autoPlayHandledForSession = false
@@ -531,7 +532,14 @@ class StreamScreenViewModel @Inject constructor(
             emptyList()
         }
 
-        val orderedNames = (addonNames + pluginNames).distinct()
+        val debridNames = try {
+            debridStreamSource.activeSourceLabels()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        // Debrid first, then installed addons, then plugins/scrapers.
+        val orderedNames = (debridNames + addonNames + pluginNames).distinct()
         if (orderedNames.isEmpty()) {
             updateUiStateIfChanged { it.copy(sourceChips = emptyList()) }
             return

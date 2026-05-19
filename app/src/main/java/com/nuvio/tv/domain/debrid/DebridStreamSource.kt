@@ -28,6 +28,14 @@ class DebridStreamSource @Inject constructor(
         return settings.enabled && settings.activeServices().isNotEmpty()
     }
 
+    /** Source labels (e.g. "Debrid (Torbox)") for each active service, for
+     *  showing loading chips before results arrive. Same labels fetchAll emits. */
+    suspend fun activeSourceLabels(): List<String> {
+        val settings = debridSettingsDataStore.settings.first()
+        if (!settings.enabled) return emptyList()
+        return settings.activeServices().map { "Debrid (${it.displayName})" }
+    }
+
     /**
      * Queries every enabled debrid service in parallel using its proven
      * already-resolving endpoint, invoking [onResult] for each service as soon
