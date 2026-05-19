@@ -501,10 +501,15 @@ private fun RightStreamSection(
     val scope = rememberCoroutineScope()
     var focusJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val orderedAddonNames = remember(availableAddons, sourceChips) {
-        buildList {
+        val combined = buildList {
             addAll(availableAddons)
             sourceChips.forEach { if (it.name !in this) add(it.name) }
         }
+        // Built-in debrid sources ("Debrid (...)") stay pinned to the front
+        // even while still loading, so they don't jump from last to first
+        // once they resolve. partition() is stable, preserving relative order.
+        val (debrid, rest) = combined.partition { it.startsWith("Debrid (") }
+        debrid + rest
     }
     val chipFocusRequesters = remember(orderedAddonNames.size) {
         List(orderedAddonNames.size + 1) { FocusRequester() }
