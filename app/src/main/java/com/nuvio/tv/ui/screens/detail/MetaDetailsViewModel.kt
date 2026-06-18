@@ -769,11 +769,14 @@ class MetaDetailsViewModel @Inject constructor(
                 return@launch
             }
 
+            val seedYear = Regex("""\b(19|20)\d{2}\b""")
+                .find(meta.releaseInfo.orEmpty())?.value?.toIntOrNull()
             val rawRecommendations = runCatching {
                 tmdbMetadataService.fetchMoreLikeThis(
                     tmdbId = tmdbId,
                     contentType = tmdbContentType,
-                    language = settings.language
+                    language = settings.language,
+                    seedYear = seedYear
                 )
             }.getOrElse {
                 Log.w(TAG, "Failed to load More like this for ${meta.id}: ${it.message}")

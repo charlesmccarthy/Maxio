@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Divider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -95,6 +99,25 @@ fun HomeScreen(
     var startupCwGateTimedOut by rememberSaveable { mutableStateOf(false) }
     var introVideoFinished by rememberSaveable { mutableStateOf(false) }
     var posterOptionsTarget by remember { mutableStateOf<HomePosterOptionsTarget?>(null) }
+
+    // Rotate the "Because you liked X" rows each time the home screen resumes so
+    // they feel fresh on every visit. Skips the first resume so we don't rebuild
+    // immediately after the initial load.
+    val likedRotationLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(likedRotationLifecycleOwner) {
+        var firstResume = true
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (firstResume) {
+                    firstResume = false
+                } else {
+                    viewModel.rotateLikedRecommendationRowsPipeline()
+                }
+            }
+        }
+        likedRotationLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { likedRotationLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Stable lambdas — captured via rememberUpdatedState so they never cause
     // downstream recomposition when uiState changes.

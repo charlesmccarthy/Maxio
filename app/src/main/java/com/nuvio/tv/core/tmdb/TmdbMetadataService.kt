@@ -461,10 +461,11 @@ class TmdbMetadataService @Inject constructor(
         tmdbId: String,
         contentType: ContentType,
         language: String = "en",
-        maxItems: Int = 12
+        maxItems: Int = 12,
+        seedYear: Int? = null
     ): List<MetaPreview> = withContext(Dispatchers.IO) {
         val normalizedLanguage = normalizeTmdbLanguage(language)
-        val cacheKey = "$tmdbId:${contentType.name}:$normalizedLanguage:more_like"
+        val cacheKey = "$tmdbId:${contentType.name}:$normalizedLanguage:${seedYear ?: 0}:more_like"
         moreLikeThisCache[cacheKey]?.let { return@withContext it }
 
         val numericId = tmdbId.toIntOrNull() ?: return@withContext emptyList()
@@ -481,23 +482,42 @@ class TmdbMetadataService @Inject constructor(
         }
 
         try {
-            val recommendations = when (tmdbType) {
-                "tv" -> tmdbApi.getTvRecommendations(numericId, TMDB_API_KEY, normalizedLanguage).body()
-                else -> tmdbApi.getMovieRecommendations(numericId, TMDB_API_KEY, normalizedLanguage).body()
-            }
+            // Blend TMDB "similar" (genre/keyword based — stays on topic) with
+            // "recommendations" (collaborative — broader). Similar is listed
+            // first so on-topic titles win ties during de-dup.
+            val similarResults = runCatching {
+                when (tmdbType) {
+                    "tv" -> tmdbApi.getTvSimilar(numericId, TMDB_API_KEY, normalizedLanguage).body()
+                    else -> tmdbApi.getMovieSimilar(numericId, TMDB_API_KEY, normalizedLanguage).body()
+                }
+            }.getOrNull()?.results.orEmpty()
+            val recommendationsResults = runCatching {
+                when (tmdbType) {
+                    "tv" -> tmdbApi.getTvRecommendations(numericId, TMDB_API_KEY, normalizedLanguage).body()
+                    else -> tmdbApi.getMovieRecommendations(numericId, TMDB_API_KEY, normalizedLanguage).body()
+                }
+            }.getOrNull()?.results.orEmpty()
 
-            val rawResults = recommendations?.results
-                .orEmpty()
-                .filter { it.id > 0 }
+            val rawResults = (similarResults + recommendationsResults)
+                .filter { it.id > 0 && it.id != numericId }
+                .distinctBy { it.id }
             val languageCode = normalizedLanguage.substringBefore("-")
-            val sortedResults = rawResults
-                .sortedWith(
-                    compareByDescending<TmdbRecommendationResult> {
-                        it.originalLanguage?.equals(languageCode, ignoreCase = true) == true
-                    }
-                        .thenByDescending { it.voteCount ?: 0 }
-                        .thenByDescending { it.voteAverage ?: 0.0 }
+            val qualityComparator = compareByDescending<TmdbRecommendationResult> {
+                it.originalLanguage?.equals(languageCode, ignoreCase = true) == true
+            }
+                .thenByDescending { it.voteCount ?: 0 }
+                .thenByDescending { it.voteAverage ?: 0.0 }
+            // When we know the seed's release year, bucket by era proximity first
+            // (same decade > adjacent > further) so e.g. an '80s pick surfaces
+            // '70s–'90s titles rather than something tonally unrelated.
+            val sortedResults = if (seedYear != null) {
+                rawResults.sortedWith(
+                    compareBy<TmdbRecommendationResult> { eraDistanceBucket(it, seedYear) }
+                        .then(qualityComparator)
                 )
+            } else {
+                rawResults.sortedWith(qualityComparator)
+            }
             val qualityFilteredResults = sortedResults.filter { rec ->
                 val voteCount = rec.voteCount ?: 0
                 val voteAverage = rec.voteAverage ?: 0.0
@@ -1378,4 +1398,21 @@ private fun TmdbEpisode.toEnrichment(): TmdbEpisodeEnrichment {
         runtimeMinutes = runtime,
         rating = voteAverage
     )
+}
+
+/**
+ * Buckets a recommendation by how close its release year is to the seed's year,
+ * so era-relevant titles rank ahead of tonally-distant ones:
+ *   0 = same decade-ish (≤10y), 1 = adjacent (≤20y), 2 = further / unknown.
+ */
+private fun eraDistanceBucket(result: TmdbRecommendationResult, seedYear: Int): Int {
+    val dateString = result.releaseDate?.takeIf { it.isNotBlank() }
+        ?: result.firstAirDate?.takeIf { it.isNotBlank() }
+    val year = dateString?.take(4)?.toIntOrNull() ?: return 2
+    val diff = kotlin.math.abs(year - seedYear)
+    return when {
+        diff <= 10 -> 0
+        diff <= 20 -> 1
+        else -> 2
+    }
 }
