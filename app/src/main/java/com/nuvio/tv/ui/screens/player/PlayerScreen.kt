@@ -204,7 +204,7 @@ fun PlayerScreen(
                     viewModel.exoPlayer?.pause()
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    viewModel.resumePlaybackAfterSecondaryNavigationIfNeeded()
+                    // Don't auto-resume, let user control
                 }
                 else -> {}
             }

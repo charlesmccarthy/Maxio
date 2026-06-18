@@ -418,24 +418,22 @@ fun PlayerRuntimeController.hideControls() {
 }
 
 fun PlayerRuntimeController.pauseForSecondaryNavigation() {
-    val resumePosition = (_exoPlayer?.currentPosition ?: _uiState.value.currentPosition).coerceAtLeast(0L)
-    flushPlaybackSnapshotForSwitchOrExit()
     hideControlsJob?.cancel()
     cancelPauseOverlay()
-    releasedForSecondaryNavigation = true
-    deferAutoplayUntilExplicitResume = true
     userPausedManually = true
+    _exoPlayer?.let { player ->
+        player.playWhenReady = false
+        player.pause()
+    }
+    notifyAudioSessionUpdate(false)
     _uiState.update {
         it.copy(
-            currentPosition = resumePosition,
-            pendingSeekPosition = resumePosition,
             showControls = false,
             showSeekOverlay = false,
             showMoreDialog = false,
             showPauseOverlay = false
         )
     }
-    releasePlayer(flushPlaybackState = false)
 }
 
 fun PlayerRuntimeController.onEvent(event: PlayerEvent) {

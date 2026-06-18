@@ -18,19 +18,6 @@ internal fun PlayerRuntimeController.startInitialPlaybackIfNeeded() {
     )
 }
 
-internal fun PlayerRuntimeController.resumePlaybackAfterSecondaryNavigationIfNeeded() {
-    if (!releasedForSecondaryNavigation) return
-    if (_exoPlayer != null) return
-    if (currentStreamUrl.isBlank()) return
-
-    releasedForSecondaryNavigation = false
-    preparePlaybackBeforeStart(
-        url = currentStreamUrl,
-        headers = currentHeaders,
-        loadSavedProgress = false
-    )
-}
-
 internal fun PlayerRuntimeController.currentHostActivity(): Activity? {
     return hostActivityRef?.get()
 }
