@@ -96,6 +96,7 @@ fun NetflixStyleRow(
     showSelectedPosterInStrip: Boolean = false,
     highlightSelectedPoster: Boolean = false,
     showDescriptionInExpandedCard: Boolean = false,
+    showYearBadge: Boolean = false,
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     onItemFocus: (MetaPreview) -> Unit = {},
     trailerEnabled: Boolean = false,
@@ -345,7 +346,8 @@ fun NetflixStyleRow(
                                     height = posterHeight,
                                     shape = cardShape,
                                     isWatched = isItemWatched(posterItem),
-                                    isSelected = highlightSelectedPoster && isFocused && posterIndex == animatedSelectedIndex
+                                    isSelected = highlightSelectedPoster && isFocused && posterIndex == animatedSelectedIndex,
+                                    showYearBadge = showYearBadge
                                 )
                             }
                         }
@@ -632,7 +634,8 @@ private fun CarouselPosterCard(
     height: Dp,
     shape: RoundedCornerShape,
     isWatched: Boolean,
-    isSelected: Boolean = false
+    isSelected: Boolean = false,
+    showYearBadge: Boolean = false
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -694,6 +697,27 @@ private fun CarouselPosterCard(
                         )
                     }
             )
+        }
+
+        if (showYearBadge) {
+            val year = remember(item.releaseInfo) {
+                item.releaseInfo?.let { YEAR_REGEX.find(it)?.value }
+            }
+            if (year != null) {
+                Text(
+                    text = year,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .zIndex(2f)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
         }
     }
 }
