@@ -781,12 +781,42 @@ fun ModernHomeContent(
                     .focusRestorer { focusRestorerRequester }
                     .onPreviewKeyEvent { event ->
                         val native = event.nativeKeyEvent
-                        if (native.action == AndroidKeyEvent.ACTION_DOWN && native.repeatCount > 0) {
+                        val isKeyDown = native.action == AndroidKeyEvent.ACTION_DOWN
+                        if (isKeyDown && native.repeatCount > 0) {
                             val now = System.currentTimeMillis()
                             if (now - lastKeyRepeatTimeRef.get() < KEY_REPEAT_THROTTLE_MS) {
                                 return@onPreviewKeyEvent true
                             }
                             lastKeyRepeatTimeRef.set(now)
+                        }
+                        // Deterministic row-to-row vertical navigation. Compose's default
+                        // spatial focus search can skip a row when the adjacent row's poster
+                        // hasn't been composed/laid out yet (async rows like Continue Watching
+                        // or catalog rows that fill in over time). Instead of trusting the
+                        // spatial search, move focus to the immediately adjacent carousel row
+                        // via the existing pending-focus request path (which scrolls + retries
+                        // until the target row composes).
+                        if (isKeyDown) {
+                            val goingDown = native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                            val goingUp = native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP
+                            if (goingDown || goingUp) {
+                                val baseKey = pendingRowFocusKey ?: activeRowKey
+                                val baseIndex = carouselRows.indexOfFirst { it.key == baseKey }
+                                if (baseIndex >= 0) {
+                                    val targetIndex = if (goingDown) baseIndex + 1 else baseIndex - 1
+                                    val targetRow = carouselRows.getOrNull(targetIndex)
+                                    if (targetRow != null && targetRow.items.isNotEmpty()) {
+                                        val desiredItemIndex = (focusedItemByRow[targetRow.key] ?: 0)
+                                            .coerceIn(0, targetRow.items.size - 1)
+                                        pendingRowFocusKey = targetRow.key
+                                        pendingRowFocusIndex = desiredItemIndex
+                                        pendingRowFocusNonce++
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                // No adjacent carousel row (top edge, or bottom edge before the
+                                // featured-studios row) — fall through to default handling.
+                            }
                         }
                         false
                     },
