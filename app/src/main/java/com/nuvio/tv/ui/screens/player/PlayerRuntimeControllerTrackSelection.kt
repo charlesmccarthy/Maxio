@@ -376,3 +376,129 @@ internal fun PlayerRuntimeController.captureCurrentAudioSelectionForSubtitleRefr
     }
     return null
 }
+
+private const val CLOSED_CAPTION_LANGUAGE = "en"
+
+private sealed interface EnglishCaptionOption {
+    data class Internal(val trackIndex: Int) : EnglishCaptionOption
+    data class Addon(val subtitle: Subtitle) : EnglishCaptionOption
+}
+
+/**
+ * Builds the ordered list of English caption options exactly as they appear in the
+ * subtitle menu's English group: embedded/built-in tracks first (in track order),
+ * then addon subtitles ordered by installed-addon order and then their position in
+ * the fetched list.
+ */
+private fun PlayerRuntimeController.buildEnglishCaptionOptions(): List<EnglishCaptionOption> {
+    val state = _uiState.value
+    val internal = state.subtitleTracks
+        .filter { PlayerSubtitleUtils.matchesLanguageCode(it.language, CLOSED_CAPTION_LANGUAGE) }
+        .map { EnglishCaptionOption.Internal(it.index) }
+
+    val addonOrder = state.installedSubtitleAddonOrder
+    val addon = state.addonSubtitles
+        .withIndex()
+        .filter { (_, subtitle) ->
+            PlayerSubtitleUtils.matchesLanguageCode(subtitle.lang, CLOSED_CAPTION_LANGUAGE)
+        }
+        .sortedWith(
+            compareBy(
+                { (_, subtitle) ->
+                    addonOrder.indexOf(subtitle.addonName).let { if (it < 0) Int.MAX_VALUE else it }
+                },
+                { (index, _) -> index }
+            )
+        )
+        .map { (_, subtitle) -> EnglishCaptionOption.Addon(subtitle) }
+
+    return internal + addon
+}
+
+private fun isSameAddonSubtitle(a: Subtitle, b: Subtitle): Boolean =
+    a.id == b.id && a.url == b.url && a.addonName == b.addonName
+
+/**
+ * Single-press behaviour of the CC button: turn on English captions using the first
+ * item in the list, advance to the next English item on each subsequent press, then
+ * turn captions off after the last one — cycling back to the first on the next press.
+ * Falls back to opening the full menu when no English captions are available.
+ */
+internal fun PlayerRuntimeController.cycleEnglishClosedCaptions() {
+    val options = buildEnglishCaptionOptions()
+    if (options.isEmpty()) {
+        _uiState.update { it.copy(showSubtitleOverlay = true, showControls = true) }
+        return
+    }
+
+    val state = _uiState.value
+    val selectedAddon = state.selectedAddonSubtitle
+    val selectedInternalIndex = state.selectedSubtitleTrackIndex
+    val currentIndex = when {
+        selectedAddon != null -> options.indexOfFirst {
+            it is EnglishCaptionOption.Addon && isSameAddonSubtitle(it.subtitle, selectedAddon)
+        }
+        selectedInternalIndex >= 0 -> options.indexOfFirst {
+            it is EnglishCaptionOption.Internal && it.trackIndex == selectedInternalIndex
+        }
+        else -> -1
+    }
+
+    // none/other selection -> first; last English option -> off; otherwise next.
+    val nextIndex = when {
+        currentIndex < 0 -> 0
+        currentIndex >= options.lastIndex -> -1
+        else -> currentIndex + 1
+    }
+
+    if (nextIndex < 0) {
+        applyClosedCaptionOff()
+        showTransientPlayerIndicator("Subtitles: Off")
+        return
+    }
+
+    val positionLabel = if (options.size > 1) " (${nextIndex + 1}/${options.size})" else ""
+    when (val option = options[nextIndex]) {
+        is EnglishCaptionOption.Internal -> {
+            applyInternalClosedCaption(option.trackIndex)
+            showTransientPlayerIndicator("Subtitles: English$positionLabel")
+        }
+        is EnglishCaptionOption.Addon -> {
+            applyAddonClosedCaption(option.subtitle)
+            showTransientPlayerIndicator("Subtitles: English · ${option.subtitle.addonName}$positionLabel")
+        }
+    }
+}
+
+private fun PlayerRuntimeController.applyInternalClosedCaption(index: Int) {
+    autoSubtitleSelected = true
+    pendingAddonSubtitleLanguage = null
+    pendingAddonSubtitleTrackId = null
+    pendingAudioSelectionAfterSubtitleRefresh = null
+    rememberInternalSubtitleSelection(index)
+    selectSubtitleTrack(index)
+    _uiState.update { it.copy(selectedAddonSubtitle = null, showControls = true) }
+}
+
+private fun PlayerRuntimeController.applyAddonClosedCaption(subtitle: Subtitle) {
+    autoSubtitleSelected = true
+    rememberAddonSubtitleSelection(subtitle)
+    selectAddonSubtitle(subtitle)
+    _uiState.update { it.copy(showControls = true) }
+}
+
+private fun PlayerRuntimeController.applyClosedCaptionOff() {
+    autoSubtitleSelected = true
+    pendingAddonSubtitleLanguage = null
+    pendingAddonSubtitleTrackId = null
+    pendingAudioSelectionAfterSubtitleRefresh = null
+    rememberSubtitleDisabled()
+    disableSubtitles()
+    _uiState.update {
+        it.copy(
+            selectedAddonSubtitle = null,
+            selectedSubtitleTrackIndex = -1,
+            showControls = true
+        )
+    }
+}

@@ -590,6 +590,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                 )
             }
         }
+        PlayerEvent.OnCycleClosedCaptions -> cycleEnglishClosedCaptions()
         is PlayerEvent.OnSetPlaybackSpeed -> {
             _exoPlayer?.setPlaybackSpeed(event.speed)
             _uiState.update { 

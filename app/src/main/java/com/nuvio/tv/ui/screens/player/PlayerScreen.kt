@@ -748,6 +748,7 @@ fun PlayerScreen(
                 onShowSourcesPanel = { viewModel.onEvent(PlayerEvent.OnShowSourcesPanel) },
                 onShowAudioDialog = { viewModel.onEvent(PlayerEvent.OnShowAudioOverlay) },
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
+                onCycleClosedCaptions = { viewModel.onEvent(PlayerEvent.OnCycleClosedCaptions) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
                     Log.d("PlayerScreen", "onToggleAspectRatio called - dispatching event")
@@ -1028,6 +1029,7 @@ private fun PlayerControlsOverlay(
     onShowSourcesPanel: () -> Unit,
     onShowAudioDialog: () -> Unit,
     onShowSubtitleDialog: () -> Unit,
+    onCycleClosedCaptions: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
     onToggleMoreActions: () -> Unit,
@@ -1257,7 +1259,8 @@ private fun PlayerControlsOverlay(
                             icon = Icons.Default.ClosedCaption,
                             iconPainter = customSubtitlePainter,
                             contentDescription = "Subtitles",
-                            onClick = onShowSubtitleDialog,
+                            onClick = onCycleClosedCaptions,
+                            onLongClick = onShowSubtitleDialog,
                             upFocusRequester = progressBarFocusRequester,
                             onDownKey = handleDownFromControls,
                             onFocused = onResetHideTimer
@@ -1435,12 +1438,14 @@ private fun ControlButton(
     iconPainter: Painter? = null,
     contentDescription: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
     onDownKey: (() -> Unit)? = null,
     onFocused: (() -> Unit)? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    var longPressTriggered by remember { mutableStateOf(false) }
 
     IconButton(
         onClick = onClick,
@@ -1458,6 +1463,25 @@ private fun ControlButton(
                 }
             )
             .onPreviewKeyEvent { keyEvent ->
+                val native = keyEvent.nativeKeyEvent
+                val isSelectKey = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                if (onLongClick != null && isSelectKey) {
+                    if (native.action == KeyEvent.ACTION_DOWN &&
+                        !longPressTriggered &&
+                        (native.isLongPress || native.repeatCount > 0)
+                    ) {
+                        longPressTriggered = true
+                        onLongClick()
+                        return@onPreviewKeyEvent true
+                    }
+                    if (native.action == KeyEvent.ACTION_UP && longPressTriggered) {
+                        // Swallow the release so IconButton's onClick doesn't also fire.
+                        longPressTriggered = false
+                        return@onPreviewKeyEvent true
+                    }
+                }
                 if (
                     upFocusRequester != null &&
                     keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&

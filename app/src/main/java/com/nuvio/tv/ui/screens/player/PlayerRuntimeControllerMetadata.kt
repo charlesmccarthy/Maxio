@@ -409,12 +409,19 @@ internal fun PlayerRuntimeController.evaluateNextEpisodeCardVisibility(positionM
 internal fun PlayerRuntimeController.showStreamSourceIndicator(stream: Stream) {
     val chosenSource = (stream.name?.takeIf { it.isNotBlank() } ?: stream.addonName).trim()
     if (chosenSource.isBlank()) return
+    showTransientPlayerIndicator("Source: $chosenSource")
+}
 
+// Reuses the top-center stream-source indicator UI to briefly surface any short
+// player status message (e.g. the current closed-caption selection when cycling
+// via the CC button without opening the full menu).
+internal fun PlayerRuntimeController.showTransientPlayerIndicator(text: String) {
+    if (text.isBlank()) return
     hideStreamSourceIndicatorJob?.cancel()
     _uiState.update {
         it.copy(
             showStreamSourceIndicator = true,
-            streamSourceIndicatorText = "Source: $chosenSource"
+            streamSourceIndicatorText = text
         )
     }
     hideStreamSourceIndicatorJob = scope.launch {
