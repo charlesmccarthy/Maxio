@@ -589,7 +589,11 @@ private class SubtitleOffsetRenderersFactory(
     ): AudioSink {
         return DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
-            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            // Apply playback speed at the AudioTrack level. Overriding the sink's
+            // processor chain with only the gain processor drops the software
+            // Sonic tempo path in this forked ExoPlayer, so speed changes had no
+            // effect; the hardware AudioTrack params handle speed reliably.
+            .setEnableAudioTrackPlaybackParams(true)
             .setAudioProcessors(arrayOf(gainAudioProcessor))
             .setAudioTrackBufferSizeProvider(FormatAwareAudioTrackBufferProvider())
             .build()
