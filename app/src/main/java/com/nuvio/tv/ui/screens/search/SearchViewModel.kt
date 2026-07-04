@@ -7,6 +7,7 @@ import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
+import com.nuvio.tv.data.local.RecentSearchesDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
 import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
@@ -40,6 +41,7 @@ class SearchViewModel @Inject constructor(
     private val addonRepository: AddonRepository,
     private val catalogRepository: CatalogRepository,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
+    private val recentSearchesDataStore: RecentSearchesDataStore,
     private val trailerService: TrailerService,
     private val tmdbService: TmdbService,
     private val tmdbApi: TmdbApi,
@@ -86,6 +88,11 @@ class SearchViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch {
+            recentSearchesDataStore.recentSearches.collectLatest { recents ->
+                _uiState.update { it.copy(recentSearches = recents) }
+            }
+        }
         viewModelScope.launch {
             layoutPreferenceDataStore.searchDiscoverEnabled.collectLatest { enabled ->
                 _uiState.update { it.copy(discoverEnabled = enabled) }
@@ -256,6 +263,25 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    private fun recordRecentSearch(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.length < 2) return
+        viewModelScope.launch { recentSearchesDataStore.add(trimmed) }
+    }
+
+    /** Called when the user opens a result — the query that produced it is worth remembering. */
+    fun recordSubmittedQueryAsRecent() {
+        recordRecentSearch(_uiState.value.submittedQuery.ifBlank { _uiState.value.query })
+    }
+
+    fun removeRecentSearch(query: String) {
+        viewModelScope.launch { recentSearchesDataStore.remove(query) }
+    }
+
+    fun clearRecentSearches() {
+        viewModelScope.launch { recentSearchesDataStore.clear() }
+    }
+
     private fun onQueryChanged(query: String) {
         _uiState.update {
             val trimmedInput = query.trim()
@@ -383,6 +409,7 @@ class SearchViewModel @Inject constructor(
     private fun submitSearch() {
         liveSearchJob?.cancel()
         val query = _uiState.value.query.trim()
+        recordRecentSearch(query)
         if (query == _uiState.value.submittedQuery.trim() &&
             (_uiState.value.catalogRows.isNotEmpty() || _uiState.value.error != null || query.length < 2)
         ) {

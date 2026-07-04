@@ -81,7 +81,8 @@ class ProfileSettingsSyncService @Inject constructor(
         "animeskip_settings",
         "debrid_settings",
         "track_preference",
-        "liked_media"
+        "liked_media",
+        "recent_searches"
     )
 
     init {

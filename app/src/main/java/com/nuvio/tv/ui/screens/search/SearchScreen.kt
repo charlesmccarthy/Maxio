@@ -11,6 +11,7 @@ import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +33,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +54,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -107,6 +112,7 @@ fun SearchScreen(
     val searchFocusRequester = remember { FocusRequester() }
     val discoverFirstItemFocusRequester = remember { FocusRequester() }
     val searchResultsFirstRowFocusRequester = remember { FocusRequester() }
+    val recentSearchesFirstFocusRequester = remember { FocusRequester() }
     var isSearchFieldAttached by remember { mutableStateOf(false) }
     var focusResults by remember { mutableStateOf(false) }
     var pendingFocusMoveToResultsQuery by remember { mutableStateOf<String?>(null) }
@@ -263,6 +269,13 @@ fun SearchScreen(
     ) {
         if (isDiscoverMode) false else trimmedSubmittedQuery.length >= 2 && uiState.catalogRows.any { it.items.isNotEmpty() }
     }
+    // Recent searches take over the empty screen (before any active query) so the
+    // user can jump back to a previous search. Shown regardless of Discover mode.
+    val showRecentSearches = remember(trimmedQuery, trimmedSubmittedQuery, uiState.recentSearches) {
+        trimmedQuery.isEmpty() && trimmedSubmittedQuery.isEmpty() && uiState.recentSearches.isNotEmpty()
+    }
+    // Allow D-pad down out of the search field into either results or recent searches.
+    val canMoveDownFromSearch = canMoveToResults || showRecentSearches
     val submitCurrentQuery: (String) -> Unit = { submittedQuery ->
         viewModel.onEvent(SearchEvent.SubmitSearch)
         focusResults = false
@@ -315,6 +328,14 @@ fun SearchScreen(
             pendingFocusMoveToResultsQuery = null
             pendingFocusMoveSawSearching = false
             pendingFocusMoveHadExistingSearchRows = false
+        }
+    }
+
+    LaunchedEffect(focusResults, showRecentSearches) {
+        if (focusResults && showRecentSearches) {
+            delay(100)
+            runCatching { recentSearchesFirstFocusRequester.requestFocus() }
+            focusResults = false
         }
     }
 
@@ -414,7 +435,7 @@ fun SearchScreen(
     ) {
         SearchInputField(
             query = uiState.query,
-            canMoveToResults = canMoveToResults,
+            canMoveToResults = canMoveDownFromSearch,
             voiceFocusRequester = if (isVoiceSearchAvailable) voiceFocusRequester else null,
             searchFocusRequester = searchFocusRequester,
             onAttached = { isSearchFieldAttached = true },
@@ -433,7 +454,27 @@ fun SearchScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (isDiscoverMode) {
+        if (showRecentSearches) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp)
+            ) {
+                item {
+                    RecentSearchesSection(
+                        searches = uiState.recentSearches,
+                        firstItemFocusRequester = recentSearchesFirstFocusRequester,
+                        onSearchClick = { query ->
+                            handleQueryChanged(query)
+                            submitCurrentQuery(query.trim())
+                        },
+                        onRemove = { query -> viewModel.removeRecentSearch(query) },
+                        onClearAll = { viewModel.clearRecentSearches() }
+                    )
+                }
+            }
+        } else if (isDiscoverMode) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -535,6 +576,7 @@ fun SearchScreen(
                                 items = catalogRow.items,
                                 focusRequester = if (index == 0) searchResultsFirstRowFocusRequester else null,
                                 onItemClick = { item ->
+                                    viewModel.recordSubmittedQueryAsRecent()
                                     viewModel.storeActiveTrailer(item)
                                     onNavigateToDetail(item.id, catalogRow.apiType, catalogRow.addonBaseUrl)
                                 },
@@ -701,6 +743,141 @@ private fun SearchInputField(
                 unfocusedTextColor = NuvioColors.TextPrimary,
                 cursorColor = NuvioColors.FocusRing
             )
+        )
+    }
+}
+
+@Composable
+private fun RecentSearchesSection(
+    searches: List<String>,
+    firstItemFocusRequester: FocusRequester,
+    onSearchClick: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onClearAll: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 52.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.search_recent_title),
+            style = androidx.tv.material3.MaterialTheme.typography.titleSmall,
+            color = NuvioColors.TextPrimary,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        searches.forEachIndexed { index, query ->
+            RecentSearchChip(
+                query = query,
+                focusRequester = if (index == 0) firstItemFocusRequester else null,
+                onClick = { onSearchClick(query) },
+                onRemove = { onRemove(query) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        RecentSearchClearRow(onClick = onClearAll)
+    }
+}
+
+@Composable
+private fun RecentSearchChip(
+    query: String,
+    focusRequester: FocusRequester?,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    var longPressTriggered by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { isFocused = it.isFocused }
+            .onPreviewKeyEvent { keyEvent ->
+                val native = keyEvent.nativeKeyEvent
+                val isSelectKey = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                if (isSelectKey) {
+                    if (native.action == KeyEvent.ACTION_DOWN &&
+                        !longPressTriggered &&
+                        (native.isLongPress || native.repeatCount > 0)
+                    ) {
+                        longPressTriggered = true
+                        onRemove()
+                        return@onPreviewKeyEvent true
+                    }
+                    if (native.action == KeyEvent.ACTION_UP && longPressTriggered) {
+                        longPressTriggered = false
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+            .background(if (isFocused) NuvioColors.FocusBackground else NuvioColors.BackgroundCard)
+            .border(
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) NuvioColors.FocusRing else NuvioColors.Border,
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+            tint = if (isFocused) NuvioColors.TextPrimary else NuvioColors.TextSecondary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = query,
+            style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
+            color = if (isFocused) NuvioColors.TextPrimary else NuvioColors.TextSecondary,
+            modifier = Modifier.weight(1f)
+        )
+        if (isFocused) {
+            Text(
+                text = stringResource(R.string.search_recent_hold_to_remove),
+                style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
+                color = NuvioColors.TextTertiary
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecentSearchClearRow(onClick: () -> Unit) {
+    var isFocused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .onFocusChanged { isFocused = it.isFocused }
+            .background(if (isFocused) NuvioColors.FocusBackground else Color.Transparent)
+            .border(
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) NuvioColors.FocusRing else NuvioColors.Border,
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Close,
+            contentDescription = null,
+            tint = if (isFocused) NuvioColors.TextPrimary else NuvioColors.TextSecondary,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = stringResource(R.string.search_recent_clear),
+            style = androidx.tv.material3.MaterialTheme.typography.bodyMedium,
+            color = if (isFocused) NuvioColors.TextPrimary else NuvioColors.TextSecondary
         )
     }
 }
