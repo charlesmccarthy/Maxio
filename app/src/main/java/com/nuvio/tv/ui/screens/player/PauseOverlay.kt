@@ -64,6 +64,7 @@ fun PauseOverlay(
     type: String?,
     description: String?,
     cast: List<MetaCastMember>,
+    episodeAirDate: String? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedCastMember by remember { mutableStateOf<MetaCastMember?>(null) }
@@ -104,6 +105,7 @@ fun PauseOverlay(
                     type = type,
                     description = description,
                     cast = cast,
+                    episodeAirDate = episodeAirDate,
                     onCastSelected = { selectedCastMember = it }
                 )
             }
@@ -146,6 +148,7 @@ private fun PauseMetadataView(
     type: String?,
     description: String?,
     cast: List<MetaCastMember>,
+    episodeAirDate: String? = null,
     onCastSelected: (MetaCastMember) -> Unit
 ) {
     Column(
@@ -218,6 +221,16 @@ private fun PauseMetadataView(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+
+            val formattedAirDate = remember(episodeAirDate) { formatEpisodeAirDate(episodeAirDate) }
+            if (type in listOf("series", "tv") && formattedAirDate != null) {
+                Text(
+                    text = stringResource(R.string.pause_episode_aired, formattedAirDate),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NuvioColors.TextTertiary,
+                    modifier = Modifier.padding(top = 6.dp)
                 )
             }
 
@@ -351,5 +364,16 @@ private fun CastDetailView(
                 }
             }
         }
+    }
+}
+
+private fun formatEpisodeAirDate(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val datePart = raw.take(10)
+    return try {
+        java.time.LocalDate.parse(datePart)
+            .format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.getDefault()))
+    } catch (e: Exception) {
+        datePart
     }
 }

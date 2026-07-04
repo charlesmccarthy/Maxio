@@ -249,12 +249,17 @@ internal fun PlayerRuntimeController.resolveDescription(meta: Meta): String? {
 }
 
 internal fun PlayerRuntimeController.updateEpisodeDescription() {
-    val overview = metaVideos.firstOrNull { video ->
+    val currentVideo = metaVideos.firstOrNull { video ->
         video.season == currentSeason && video.episode == currentEpisode
-    }?.overview
+    }
+    val overview = currentVideo?.overview
+    val airDate = currentVideo?.released?.takeIf { it.isNotBlank() }
 
-    if (!overview.isNullOrBlank()) {
-        _uiState.update { it.copy(description = overview) }
+    _uiState.update { state ->
+        state.copy(
+            description = if (!overview.isNullOrBlank()) overview else state.description,
+            currentEpisodeAirDate = airDate
+        )
     }
 }
 

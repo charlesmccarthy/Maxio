@@ -876,6 +876,7 @@
 
     <!-- PauseOverlay -->
     <string name="pause_you_are_watching">You\'re watching</string>
+    <string name="pause_episode_aired">Aired %1$s</string>
     <string name="pause_cast_label">Cast</string>
     <string name="pause_back_to_details">Back to details</string>
     <string name="pause_as_character">as %1$s</string>

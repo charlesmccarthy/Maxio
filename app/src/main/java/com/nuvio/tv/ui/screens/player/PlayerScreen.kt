@@ -578,6 +578,7 @@ fun PlayerScreen(
             type = uiState.contentType,
             description = uiState.description,
             cast = uiState.castMembers,
+            episodeAirDate = uiState.currentEpisodeAirDate,
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(2.5f)
