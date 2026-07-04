@@ -529,6 +529,7 @@ data class TmdbPersonCreditCast(
     @Json(name = "release_date") val releaseDate: String? = null,
     @Json(name = "first_air_date") val firstAirDate: String? = null,
     @Json(name = "character") val character: String? = null,
+    @Json(name = "episode_count") val episodeCount: Int? = null,
     @Json(name = "vote_average") val voteAverage: Double? = null,
     @Json(name = "overview") val overview: String? = null,
     @Json(name = "genre_ids") val genreIds: List<Int>? = null

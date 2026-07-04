@@ -1119,7 +1119,8 @@ class TmdbMetadataService @Inject constructor(
                     description = credit.overview?.takeIf { it.isNotBlank() },
                     releaseInfo = year,
                     imdbRating = credit.voteAverage?.toFloat(),
-                    genres = emptyList()
+                    genres = emptyList(),
+                    characterName = credit.character?.takeIf { it.isNotBlank() }
                 )
             }
     }
@@ -1177,7 +1178,9 @@ class TmdbMetadataService @Inject constructor(
                     description = credit.overview?.takeIf { it.isNotBlank() },
                     releaseInfo = year,
                     imdbRating = credit.voteAverage?.toFloat(),
-                    genres = emptyList()
+                    genres = emptyList(),
+                    characterName = credit.character?.takeIf { it.isNotBlank() },
+                    episodeCount = credit.episodeCount?.takeIf { it > 0 }
                 )
             }
     }

@@ -97,6 +97,7 @@ fun NetflixStyleRow(
     highlightSelectedPoster: Boolean = false,
     showDescriptionInExpandedCard: Boolean = false,
     showYearBadge: Boolean = false,
+    showCreditInfo: Boolean = false,
     onRequestTrailerPreview: (MetaPreview) -> Unit = {},
     onItemFocus: (MetaPreview) -> Unit = {},
     trailerEnabled: Boolean = false,
@@ -347,7 +348,8 @@ fun NetflixStyleRow(
                                     shape = cardShape,
                                     isWatched = isItemWatched(posterItem),
                                     isSelected = highlightSelectedPoster && isFocused && posterIndex == animatedSelectedIndex,
-                                    showYearBadge = showYearBadge
+                                    showYearBadge = showYearBadge,
+                                    showCreditInfo = showCreditInfo
                                 )
                             }
                         }
@@ -361,6 +363,7 @@ fun NetflixStyleRow(
             items = items,
             selectedIndex = selectedIndex,
             showDescription = !showDescriptionInExpandedCard,
+            showCreditInfo = showCreditInfo,
             modifier = Modifier.padding(start = 48.dp, end = 48.dp, top = 8.dp)
         )
     }
@@ -635,7 +638,8 @@ private fun CarouselPosterCard(
     shape: RoundedCornerShape,
     isWatched: Boolean,
     isSelected: Boolean = false,
-    showYearBadge: Boolean = false
+    showYearBadge: Boolean = false,
+    showCreditInfo: Boolean = false
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -719,6 +723,54 @@ private fun CarouselPosterCard(
                 )
             }
         }
+
+        if (showCreditInfo) {
+            val year = remember(item.releaseInfo) {
+                item.releaseInfo?.let { YEAR_REGEX.find(it)?.value }
+            }
+            val character = item.characterName
+            val metaLine = remember(year, item.episodeCount) {
+                listOfNotNull(
+                    year,
+                    item.episodeCount?.let { count ->
+                        if (count == 1) "1 episode" else "$count episodes"
+                    }
+                ).joinToString(" · ").takeIf { it.isNotBlank() }
+            }
+            if (character != null || metaLine != null) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .zIndex(2f)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))
+                            )
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    if (character != null) {
+                        Text(
+                            text = character,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (metaLine != null) {
+                        Text(
+                            text = metaLine,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -728,6 +780,7 @@ private fun ExpandedCardMeta(
     items: List<MetaPreview>,
     selectedIndex: Int,
     showDescription: Boolean = true,
+    showCreditInfo: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Crossfade(
@@ -736,7 +789,7 @@ private fun ExpandedCardMeta(
         label = "metaFade"
     ) { animatedIndex ->
         val item = items[animatedIndex]
-        val metaTokens = remember(item.rawType, item.genres, item.releaseInfo, item.imdbRating) {
+        val metaTokens = remember(item.rawType, item.genres, item.releaseInfo, item.imdbRating, item.episodeCount) {
             buildList {
                 add(item.apiType.replaceFirstChar { ch -> ch.uppercase() })
                 item.genres.firstOrNull()?.let { add(it) }
@@ -744,10 +797,23 @@ private fun ExpandedCardMeta(
                     ?.let { YEAR_REGEX.find(it)?.value }
                     ?.let { add(it) }
                 item.imdbRating?.let { add(String.format("%.1f", it)) }
+                item.episodeCount?.let { count ->
+                    add(if (count == 1) "1 episode" else "$count episodes")
+                }
             }
         }
+        val character = item.characterName?.takeIf { showCreditInfo && it.isNotBlank() }
 
         Column(modifier = modifier) {
+            if (character != null) {
+                Text(
+                    text = "as $character",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NuvioColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             if (metaTokens.isNotEmpty()) {
                 Text(
                     text = metaTokens.joinToString("  \u2022  "),

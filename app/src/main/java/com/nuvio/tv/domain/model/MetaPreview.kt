@@ -31,7 +31,11 @@ data class MetaPreview(
     val links: List<MetaLink> = emptyList(),
     val behaviorHints: MetaBehaviorHints? = null,
     val trailers: List<MetaTrailer> = emptyList(),
-    val trailerYtIds: List<String> = emptyList()
+    val trailerYtIds: List<String> = emptyList(),
+    // Filmography context: the character an actor played and, for TV, how many
+    // episodes they appeared in. Null outside the cast-detail screen.
+    val characterName: String? = null,
+    val episodeCount: Int? = null
 ) {
     val apiType: String
         get() = type.toApiString(rawType)

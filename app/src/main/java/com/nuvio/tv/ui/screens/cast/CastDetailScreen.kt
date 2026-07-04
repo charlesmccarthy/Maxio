@@ -478,7 +478,7 @@ private fun FilmographyRow(
         onRequestTrailerPreview = onRequestTrailerPreview,
         onItemFocus = onItemFocus,
         showDescriptionInExpandedCard = true,
-        showYearBadge = true
+        showCreditInfo = true
     )
 }
 
