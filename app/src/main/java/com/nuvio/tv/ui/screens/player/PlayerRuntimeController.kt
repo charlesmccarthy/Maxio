@@ -161,6 +161,7 @@ class PlayerRuntimeController(
             backdrop = backdrop,
             logo = logo,
             showLoadingOverlay = true,
+            currentVideoId = currentVideoId,
             currentSeason = currentSeason,
             currentEpisode = currentEpisode,
             currentEpisodeTitle = currentEpisodeTitle

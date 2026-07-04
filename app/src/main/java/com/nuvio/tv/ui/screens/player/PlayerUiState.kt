@@ -69,6 +69,7 @@ data class PlayerUiState(
     val episodesAvailableSeasons: List<Int> = emptyList(),
     val episodesSelectedSeason: Int? = null,
     val episodes: List<Video> = emptyList(),
+    val currentVideoId: String? = null,
     val currentSeason: Int? = null,
     val currentEpisode: Int? = null,
     val currentEpisodeTitle: String? = null,

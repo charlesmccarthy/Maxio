@@ -627,6 +627,7 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(stream: Stream, force
         it.copy(
             isBuffering = true,
             error = null,
+            currentVideoId = currentVideoId,
             currentSeason = currentSeason,
             currentEpisode = currentEpisode,
             currentEpisodeTitle = currentEpisodeTitle,

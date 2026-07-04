@@ -655,7 +655,7 @@ fun NuvioNavHost(
             )
         ) { backStackEntry ->
             PlayerScreen(
-                onBackPress = { currentSeason, currentEpisode, autoPlayEnabled ->
+                onBackPress = { currentVideoId, currentSeason, currentEpisode, autoPlayEnabled ->
                     val args = backStackEntry.arguments
                     val initialSeason = args?.getString("season")?.toIntOrNull()
                     val initialEpisode = args?.getString("episode")?.toIntOrNull()
@@ -700,8 +700,11 @@ fun NuvioNavHost(
                             }
                         }
                         episodeChangedInPlace && !autoPlayEnabled -> {
-                            // manual stream switch to next episode — go to Stream of current episode
-                            val videoId = args?.getString("videoId").orEmpty()
+                            // manual stream switch to next episode — go to Stream of current episode.
+                            // Use the player's current videoId (updated on in-place episode switch),
+                            // not the stale launch arg which still points at the previous episode.
+                            val videoId = currentVideoId?.takeIf { it.isNotBlank() }
+                                ?: args?.getString("videoId").orEmpty()
                             if (videoId.isNotBlank() && contentType.isNotBlank()) {
                                 navController.navigate(
                                     Screen.Stream.createRoute(
