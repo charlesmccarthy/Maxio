@@ -1148,6 +1148,9 @@ private fun PlayerControlsOverlay(
                             if (!uiState.currentEpisodeTitle.isNullOrBlank()) {
                                 append(" • ${uiState.currentEpisodeTitle}")
                             }
+                            formatEpisodeAirDate(uiState.currentEpisodeAirDate)?.let { aired ->
+                                append(" • $aired")
+                            }
                         }
                         Text(
                             text = episodeInfo,

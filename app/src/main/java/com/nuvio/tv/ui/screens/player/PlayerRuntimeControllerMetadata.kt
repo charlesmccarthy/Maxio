@@ -177,6 +177,14 @@ private suspend fun PlayerRuntimeController.fetchTmdbCast(id: String, type: Stri
 internal fun PlayerRuntimeController.applyMetaDetails(meta: Meta) {
     metaVideos = meta.videos
     val description = resolveDescription(meta)
+    // Resolve the current episode's air date (and episode-specific overview)
+    // inline so it's set on initial load, in the same atomic state update as
+    // the cast merge — without a separate call that could interrupt the flow.
+    val currentVideo = meta.videos.firstOrNull { video ->
+        video.season == currentSeason && video.episode == currentEpisode
+    }
+    val episodeOverview = currentVideo?.overview?.takeIf { it.isNotBlank() }
+    val episodeAirDate = currentVideo?.released?.takeIf { it.isNotBlank() }
 
     _uiState.update { state ->
         val mergedCastMembers = mergePlayerCastMembers(
@@ -185,8 +193,9 @@ internal fun PlayerRuntimeController.applyMetaDetails(meta: Meta) {
             limit = PLAYER_CAST_TARGET_COUNT
         )
         state.copy(
-            description = description ?: state.description,
-            castMembers = mergedCastMembers
+            description = episodeOverview ?: description ?: state.description,
+            castMembers = mergedCastMembers,
+            currentEpisodeAirDate = episodeAirDate
         )
     }
     recomputeNextEpisode(resetVisibility = false)

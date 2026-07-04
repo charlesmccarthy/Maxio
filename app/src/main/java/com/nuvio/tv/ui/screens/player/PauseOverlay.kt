@@ -367,7 +367,7 @@ private fun CastDetailView(
     }
 }
 
-private fun formatEpisodeAirDate(raw: String?): String? {
+internal fun formatEpisodeAirDate(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
     val datePart = raw.take(10)
     return try {
