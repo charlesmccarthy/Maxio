@@ -298,6 +298,7 @@ fun NetflixStyleRow(
                 trailerMuted = trailerMuted,
                 logoOverrides = logoOverrides,
                 showDescriptionInExpandedCard = showDescriptionInExpandedCard,
+                showCreditInfo = showCreditInfo,
                 onTrailerProgressChanged = onTrailerProgressChanged
             )
 
@@ -384,6 +385,7 @@ private fun ExpandedCarouselCard(
     trailerMuted: Boolean,
     logoOverrides: Map<String, String> = emptyMap(),
     showDescriptionInExpandedCard: Boolean = false,
+    showCreditInfo: Boolean = false,
     onTrailerProgressChanged: (itemId: String, positionMs: Long) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
@@ -391,13 +393,12 @@ private fun ExpandedCarouselCard(
     val requestWidthPx = remember(width, density) { with(density) { width.roundToPx() } }
     val requestHeightPx = remember(height, density) { with(density) { height.roundToPx() } }
     val selectedItem = items[selectedIndex]
-    val overlayHeight = if (
-        showDescriptionInExpandedCard &&
-        !selectedItem.description.isNullOrBlank()
-    ) {
-        132.dp
-    } else {
-        96.dp
+    val hasCreditLine = showCreditInfo && !selectedItem.characterName.isNullOrBlank()
+    val overlayHeight = when {
+        showDescriptionInExpandedCard && !selectedItem.description.isNullOrBlank() ->
+            if (hasCreditLine) 156.dp else 132.dp
+        hasCreditLine -> 120.dp
+        else -> 96.dp
     }
 
     Box(
@@ -473,14 +474,9 @@ private fun ExpandedCarouselCard(
                             }
                     )
 
-                    // Logo or title overlay
-                    ExpandedCardTitle(
-                        item = item,
-                        context = context,
-                        requestWidthPx = requestWidthPx,
-                        logoOverrides = logoOverrides,
-                        showDescription = showDescriptionInExpandedCard
-                    )
+                    // Title is rendered once by the overlay below, which sits on
+                    // top of both the backdrop and the trailer — rendering it
+                    // here too caused a doubled, offset title.
                 }
             }
 
@@ -532,7 +528,8 @@ private fun ExpandedCarouselCard(
                     context = context,
                     requestWidthPx = requestWidthPx,
                     logoOverrides = logoOverrides,
-                    showDescription = showDescriptionInExpandedCard
+                    showDescription = showDescriptionInExpandedCard,
+                    showCreditInfo = showCreditInfo
                 )
             }
 
@@ -573,7 +570,8 @@ private fun ExpandedCardTitle(
     context: android.content.Context,
     requestWidthPx: Int,
     logoOverrides: Map<String, String> = emptyMap(),
-    showDescription: Boolean = false
+    showDescription: Boolean = false,
+    showCreditInfo: Boolean = false
 ) {
     val density = LocalDensity.current
     val logoRequestHeightPx = remember(density) { with(density) { 48.dp.roundToPx() } }
@@ -611,6 +609,21 @@ private fun ExpandedCardTitle(
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White,
                 maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        val character = item.characterName?.takeIf { showCreditInfo && it.isNotBlank() }
+        val episodeText = item.episodeCount
+            ?.takeIf { showCreditInfo && it > 0 }
+            ?.let { if (it == 1) "1 episode" else "$it episodes" }
+        if (character != null || episodeText != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = listOfNotNull(character?.let { "as $it" }, episodeText).joinToString("  •  "),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
