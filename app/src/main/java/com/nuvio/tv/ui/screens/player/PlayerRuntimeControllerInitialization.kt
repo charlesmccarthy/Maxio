@@ -110,8 +110,10 @@ internal fun PlayerRuntimeController.initializePlayer(url: String, headers: Map<
                 .setBufferDurationsMs(
                     DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
                     70_000,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                    // Start playback sooner: debrid/CDN sources deliver fast, so we
+                    // don't need the full 2.5s pre-roll buffer before the first frame.
+                    1_000,
+                    2_000
                 )
                 .build()
 

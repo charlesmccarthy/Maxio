@@ -94,6 +94,10 @@ internal class PlayerMediaSourceFactory {
     companion object {
         private const val PROBE_TIMEOUT_MS = 4000
         private const val PROBE_BYTES = 1024
+        private val PROGRESSIVE_CONTAINER_EXTENSIONS = listOf(
+            ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".webm", ".flv",
+            ".wmv", ".mpg", ".mpeg", ".m2ts", ".mts", ".ts", ".3gp", ".ogv", ".divx"
+        )
         private const val DEFAULT_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -175,12 +179,33 @@ internal class PlayerMediaSourceFactory {
         ): String? {
             inferMimeType(url = url, filename = filename)?.let { return it }
 
+            // If the filename/URL clearly points at a self-contained progressive
+            // container (mkv/mp4/avi/...), skip the network probe entirely: ExoPlayer
+            // plays it as a progressive source with a null mime type anyway. Probing
+            // would fire a redundant HEAD/Range request that, for debrid redirect
+            // links, resolves the whole redirect chain server-side — costing several
+            // seconds before the player even connects. Debrid streams always carry a
+            // real release filename, so this shaves that time off startup.
+            if (isProgressiveContainer(filename) || isProgressiveContainer(url)) {
+                return null
+            }
+
             val sanitizedHeaders = sanitizeHeaders(headers)
 
             return withContext(Dispatchers.IO) {
                 probeMimeTypeWithHead(url, sanitizedHeaders)
                     ?: probeMimeTypeWithRangeGet(url, sanitizedHeaders)
             }
+        }
+
+        private fun isProgressiveContainer(pathOrUrl: String?): Boolean {
+            val normalized = pathOrUrl
+                ?.substringBefore('#')
+                ?.substringBefore('?')
+                ?.lowercase(Locale.US)
+                ?.trim()
+                ?: return false
+            return PROGRESSIVE_CONTAINER_EXTENSIONS.any { normalized.endsWith(it) }
         }
 
         private fun inferMimeTypeFromPath(path: String?): String? {
