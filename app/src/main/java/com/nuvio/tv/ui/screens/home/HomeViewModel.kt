@@ -154,6 +154,9 @@ class HomeViewModel @Inject constructor(
     internal var likedItems: List<MetaPreview> = emptyList()
     internal var likedRecommendationRows: List<CatalogRow> = emptyList()
     internal var likedRecommendationJob: Job? = null
+    // "Recently Added" rows built from the user's Library (movies + shows).
+    internal var libraryRecentlyAddedRows: List<CatalogRow> = emptyList()
+    internal var libraryRecentlyAddedJob: Job? = null
     // Rotates which liked titles seed the "Because you liked X" rows. Seeded per
     // app launch and advanced on each home resume so the rows feel fresh.
     internal var likedRotationToken: Int = SystemClock.elapsedRealtime().toInt()
@@ -200,6 +203,7 @@ class HomeViewModel @Inject constructor(
         loadHomeCatalogOrderPreference()
         loadDisabledHomeCatalogPreference()
         observeLibraryState()
+        observeLibraryRecentlyAddedRows()
         observeTmdbSettings()
         observeStartupAuthNotice()
         loadContinueWatching()

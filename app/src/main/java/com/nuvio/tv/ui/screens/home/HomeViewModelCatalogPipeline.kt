@@ -294,6 +294,7 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     val heroSectionEnabled = _uiState.value.heroSectionEnabled
     val hideUnreleased = _uiState.value.hideUnreleasedContent
     val likedRowsSnapshot = likedRecommendationRows.toList()
+    val libraryRowsSnapshot = libraryRecentlyAddedRows.toList()
 
     val (displayRows, baseHeroItems, baseGridItems, fullRowsFiltered) = withContext(Dispatchers.Default) {
         val today = LocalDate.now()
@@ -335,17 +336,17 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
         }
 
 
-        val displayRowsSource = if (likedRowsSnapshot.isEmpty()) {
-            orderedRows
-        } else {
-            buildList {
-                if (orderedRows.isEmpty()) {
-                    addAll(likedRowsSnapshot)
-                } else {
-                    add(orderedRows.first())
-                    addAll(likedRowsSnapshot)
-                    addAll(orderedRows.drop(1))
-                }
+        val displayRowsSource = buildList {
+            // Recently-added Library rows sit at the very top (just under Continue Watching).
+            addAll(libraryRowsSnapshot)
+            if (likedRowsSnapshot.isEmpty()) {
+                addAll(orderedRows)
+            } else if (orderedRows.isEmpty()) {
+                addAll(likedRowsSnapshot)
+            } else {
+                add(orderedRows.first())
+                addAll(likedRowsSnapshot)
+                addAll(orderedRows.drop(1))
             }
         }
 
