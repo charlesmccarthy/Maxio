@@ -336,8 +336,15 @@ class WatchProgressRepositoryImpl @Inject constructor(
                         traktProgressService.observeAllProgress()
                             .map { items ->
                                 val nowMs = System.currentTimeMillis()
+                                // Seed Next Up from completed episodes in the progress
+                                // list (Trakt history/playback). Trakt's
+                                // /sync/watched/shows often returns shows without the
+                                // per-episode "seasons" breakdown, so the canonical
+                                // seed source comes back empty — the completed history
+                                // record is the reliable furthest-watched signal.
                                 items.filter { progress ->
-                                    isOptimisticNextUpSeedCandidate(progress, nowMs)
+                                    isOptimisticNextUpSeedCandidate(progress, nowMs) ||
+                                        isCompletedTraktNextUpSeed(progress)
                                 }
                             }
                             .onStart { emit(emptyList()) }
@@ -358,6 +365,16 @@ class WatchProgressRepositoryImpl @Inject constructor(
                 }
             }
             .distinctUntilChanged()
+    }
+
+    private fun isCompletedTraktNextUpSeed(progress: WatchProgress): Boolean {
+        if (!progress.contentType.equals("series", ignoreCase = true)) return false
+        if (!progress.isCompleted()) return false
+        if (progress.season == null || progress.episode == null || progress.season == 0) return false
+        if (isMalformedNextUpSeedContentId(progress.contentId)) return false
+        return progress.source == WatchProgress.SOURCE_TRAKT_HISTORY ||
+            progress.source == WatchProgress.SOURCE_TRAKT_SHOW_PROGRESS ||
+            progress.source == WatchProgress.SOURCE_TRAKT_PLAYBACK
     }
 
     private fun isOptimisticNextUpSeedCandidate(

@@ -25,6 +25,7 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktUserEpisodeHistoryItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktWatchedShowItemDto
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.repository.MetaRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -213,10 +214,17 @@ class TraktProgressService @Inject constructor(
             }
         }
         scope.launch {
-            refreshEvents().collectLatest {
+            // Run each refresh to completion. collectLatest cancelled an in-flight
+            // refresh whenever another event arrived, and with frequent fast-sync
+            // signals the network fetches (last_activities, watched-shows, playback)
+            // were repeatedly cancelled — leaving Continue Watching stuck on stale
+            // data and the watched-show seeds empty.
+            refreshEvents().collect {
                 val success = try {
                     refreshRemoteSnapshot()
                     true
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to refresh remote snapshot", e)
                     false
@@ -714,13 +722,24 @@ class TraktProgressService @Inject constructor(
 
         val force = System.currentTimeMillis() < forceRefreshUntilMs
 
-        if (!force && !hasActivityChanged()) return
+        // Always complete a full first load. hasActivityChanged() records the Trakt
+        // activity fingerprint as a side effect, so if an early load was cancelled
+        // after that call, every later refresh would see "no change" and skip
+        // forever — leaving the app on stale data. The first load must not be gated.
+        val firstLoad = !hasLoadedRemoteProgress.value || !hasLoadedWatchedShowSeeds
+        if (!force && !firstLoad && !hasActivityChanged()) return
 
         if ((force || watchedMoviesStale) && hasLoadedWatchedMovies) {
             getWatchedMoviesSnapshot(forceRefresh = true)
         }
 
-        if (force && hasLoadedWatchedShowSeeds) {
+        // Watched-show seeds drive the "next episode" cards in Continue Watching.
+        // Fetch them on the first refresh too — not only once already loaded. The
+        // collector-side onStart bootstrap (observeWatchedShowSeeds) can be
+        // cancelled by UI flow restarts before it completes, which previously left
+        // the seed list permanently empty; this refresh runs in the service scope
+        // and is reliable.
+        if (force || watchedShowSeedsStale || !hasLoadedWatchedShowSeeds) {
             getWatchedShowSeedsSnapshot(forceRefresh = true)
         }
 
@@ -729,9 +748,6 @@ class TraktProgressService @Inject constructor(
         hasLoadedRemoteProgress.value = true
         reconcileOptimistic(snapshot)
         hydrateMetadata(snapshot)
-        if (!force && watchedShowSeedsStale && hasLoadedWatchedShowSeeds) {
-            getWatchedShowSeedsSnapshot(forceRefresh = true)
-        }
     }
 
     private suspend fun hasActivityChanged(): Boolean {

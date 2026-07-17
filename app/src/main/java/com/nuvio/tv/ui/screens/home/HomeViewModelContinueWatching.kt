@@ -815,9 +815,9 @@ private suspend fun HomeViewModel.findNextUpEpisodeFromMetaSeed(
             "drop contentId=$contentId name=${progress.name} reason=missing-seed-season-episode " +
                 "seed=${progress.season}x${progress.episode}"
         )
-        synchronized(cwNextUpResolutionCache) {
-            cwNextUpResolutionCache[cacheKey] = null
-        }
+        // Do not cache failures: a transient meta/next-episode resolution miss
+        // (common right after finishing an episode) must not permanently suppress
+        // this show's Next Up card. Retry on the next pipeline run instead.
         return null
     }
 
@@ -829,9 +829,9 @@ private suspend fun HomeViewModel.findNextUpEpisodeFromMetaSeed(
             resolved = false
         )
         logNextUpDecision("drop contentId=$contentId name=${progress.name} reason=no-meta-for-seed")
-        synchronized(cwNextUpResolutionCache) {
-            cwNextUpResolutionCache[cacheKey] = null
-        }
+        // Do not cache failures: a transient meta/next-episode resolution miss
+        // (common right after finishing an episode) must not permanently suppress
+        // this show's Next Up card. Retry on the next pipeline run instead.
         return null
     }
     val nextVideo = resolveNextUpVideoFromMeta(progress, meta, showUnairedNextUp) ?: run {
@@ -841,9 +841,9 @@ private suspend fun HomeViewModel.findNextUpEpisodeFromMetaSeed(
             elapsedMs = SystemClock.elapsedRealtime() - startedAtMs,
             resolved = false
         )
-        synchronized(cwNextUpResolutionCache) {
-            cwNextUpResolutionCache[cacheKey] = null
-        }
+        // Do not cache failures: a transient meta/next-episode resolution miss
+        // (common right after finishing an episode) must not permanently suppress
+        // this show's Next Up card. Retry on the next pipeline run instead.
         return null
     }
     if (shouldTraceNextUpSeries(progress)) {
@@ -1034,8 +1034,13 @@ private suspend fun HomeViewModel.resolveMetaForProgress(
         meta
     }
 
-    synchronized(metaCache) {
-        metaCache[cacheKey] = resolved
+    // Only cache successful lookups. Caching a null (e.g. a 2.5s timeout when the
+    // addon is slow right after playback) would live for the whole ViewModel and
+    // never be retried, permanently blocking Next Up for that show this session.
+    if (resolved != null) {
+        synchronized(metaCache) {
+            metaCache[cacheKey] = resolved
+        }
     }
     return resolved
 }
