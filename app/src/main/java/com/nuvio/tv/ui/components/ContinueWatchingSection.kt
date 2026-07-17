@@ -286,24 +286,20 @@ fun ContinueWatchingCard(
         remainingText ?: nextUpBadgeText ?: strNextUp
     }
     val progressFraction = remember(progress) { progress?.progressPercentage ?: 0f }
-    val imageModel = remember(nextUp, progress) {
-        when {
-            nextUp != null && !nextUp.hasAired -> firstNonBlank(
-                nextUp.backdrop,
-                nextUp.poster,
-                nextUp.thumbnail,
-                progress?.backdrop,
-                progress?.poster
-            )
-            else -> firstNonBlank(
-                nextUp?.thumbnail,
-                progress?.backdrop,
-                progress?.poster,
-                nextUp?.backdrop,
-                nextUp?.poster
-            )
+    // Ordered image candidates. The first is preferred (e.g. the next-episode still),
+    // but Cinemeta hands out speculative episode-still URLs that 404 for shows without
+    // them — which rendered a blank card. On load error we fall through to the next
+    // candidate (backdrop/poster), which reliably exists.
+    val imageCandidates = remember(nextUp, progress) {
+        val ordered = if (nextUp != null && !nextUp.hasAired) {
+            listOf(nextUp.backdrop, nextUp.poster, nextUp.thumbnail, progress?.backdrop, progress?.poster)
+        } else {
+            listOf(nextUp?.thumbnail, progress?.backdrop, progress?.poster, nextUp?.backdrop, nextUp?.poster)
         }
+        ordered.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.distinct()
     }
+    var imageCandidateIndex by remember(imageCandidates) { mutableStateOf(0) }
+    val imageModel = imageCandidates.getOrNull(imageCandidateIndex)
     val titleText = remember(progress, nextUp) { progress?.name ?: nextUp?.name.orEmpty() }
     val context = LocalContext.current
     val strAirsDateForEpisode = nextUp?.airDateLabel?.let { stringResource(R.string.cw_airs_date, it) }
@@ -414,6 +410,11 @@ fun ContinueWatchingCard(
                         placeholder = backgroundPainter,
                         error = backgroundPainter,
                         fallback = backgroundPainter,
+                        onError = {
+                            if (imageCandidateIndex < imageCandidates.lastIndex) {
+                                imageCandidateIndex++
+                            }
+                        },
                         contentScale = ContentScale.Crop
                     )
                 }
