@@ -6,7 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.player.StreamAutoPlayPolicy
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.player.StreamAutoPlaySelector
 import com.nuvio.tv.core.stream.StreamPrefetchCache
+import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.ui.screens.stream.StreamPlaybackInfo
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
@@ -65,6 +68,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 private const val TAG = "MetaDetailsViewModel"
+private const val MAX_PRESELECT_BYTES = 40L * 1024 * 1024 * 1024
 
 @HiltViewModel
 class MetaDetailsViewModel @Inject constructor(
@@ -109,6 +113,7 @@ class MetaDetailsViewModel @Inject constructor(
     private var nextToWatchJob: Job? = null
     private var commentsJob: Job? = null
     private var streamPrefetchJob: Job? = null
+    private var lastWarmedStreamUrl: String? = null
 
     private var trailerDelayMs = 7000L
     private var trailerAutoplayEnabled = false
@@ -621,42 +626,130 @@ class MetaDetailsViewModel @Inject constructor(
         startStreamPrefetch(enriched)
     }
 
+    private data class PrefetchTarget(val videoId: String, val season: Int?, val episode: Int?)
+
+    private fun resolvePrefetchTarget(meta: Meta): PrefetchTarget? {
+        val videoId = meta.id.takeIf { it.isNotBlank() } ?: return null
+        val contentType = itemType.takeIf { it.isNotBlank() } ?: return null
+        return if (contentType.equals("series", ignoreCase = true)) {
+            val ntw = _uiState.value.nextToWatch
+            val s = ntw?.nextSeason
+            val e = ntw?.nextEpisode
+            // No next-to-watch yet — skip until the episode is known.
+            if (s != null && e != null) PrefetchTarget("$videoId:$s:$e", s, e) else null
+        } else {
+            PrefetchTarget(videoId, null, null)
+        }
+    }
+
     private fun startStreamPrefetch(meta: Meta) {
         streamPrefetchJob?.cancel()
-        val videoId = meta.id.takeIf { it.isNotBlank() } ?: return
+        _uiState.update { it.copy(preselectedPlayback = null) }
+        lastWarmedStreamUrl = null
         val contentType = itemType.takeIf { it.isNotBlank() } ?: return
-        // For series, determine the next-to-watch video to prefetch the right episode
-        val season: Int?
-        val episode: Int?
-        val prefetchVideoId: String
-        if (contentType.equals("series", ignoreCase = true)) {
-            val ntw = _uiState.value.nextToWatch
-            val ntwSeason = ntw?.nextSeason
-            val ntwEpisode = ntw?.nextEpisode
-            if (ntwSeason != null && ntwEpisode != null) {
-                season = ntwSeason
-                episode = ntwEpisode
-                prefetchVideoId = "$videoId:$season:$episode"
-            } else {
-                // No next-to-watch yet — skip prefetch until episode is known
-                return
-            }
-        } else {
-            season = null
-            episode = null
-            prefetchVideoId = videoId
-        }
-        streamPrefetchCache.startPrefetch(prefetchVideoId, contentType, season, episode)
+        val target = resolvePrefetchTarget(meta) ?: return
+        streamPrefetchCache.startPrefetch(target.videoId, contentType, target.season, target.episode)
         streamPrefetchJob = viewModelScope.launch(Dispatchers.IO) {
             streamRepository.getStreamsFromAllAddons(
                 type = contentType,
-                videoId = prefetchVideoId,
-                season = season,
-                episode = episode
+                videoId = target.videoId,
+                season = target.season,
+                episode = target.episode
             ).collect { result ->
                 streamPrefetchCache.emitResult(result)
+                recomputePreselectedPlayback(meta, contentType, target)
             }
             streamPrefetchCache.markComplete()
+            recomputePreselectedPlayback(meta, contentType, target)
+        }
+    }
+
+    // Picks the top stream (already debrid-first ordered) that isn't KNOWN to
+    // exceed 40GB, builds playback info for it, and warms the debrid link so the
+    // Play button starts nearly instantly.
+    private fun recomputePreselectedPlayback(meta: Meta, contentType: String, target: PrefetchTarget) {
+        val entry = streamPrefetchCache.getIfMatch(
+            target.videoId, contentType, target.season, target.episode
+        ) ?: return
+        val ordered = StreamAutoPlaySelector.orderAddonStreams(entry.addonStreams, emptyList())
+            .flatMap { it.streams }
+        val chosen = ordered.firstOrNull { stream ->
+            !stream.getStreamUrl().isNullOrBlank() &&
+                (stream.behaviorHints?.videoSize?.let { it <= MAX_PRESELECT_BYTES } ?: true)
+        } ?: return
+        val playback = buildPreselectedPlayback(meta, contentType, target, chosen)
+        if (_uiState.value.preselectedPlayback?.url != playback.url) {
+            _uiState.update { it.copy(preselectedPlayback = playback) }
+            warmStreamUrl(playback.url, playback.headers)
+        }
+    }
+
+    private fun buildPreselectedPlayback(
+        meta: Meta,
+        contentType: String,
+        target: PrefetchTarget,
+        stream: Stream
+    ): StreamPlaybackInfo {
+        val episodeTitle = if (target.season != null && target.episode != null) {
+            meta.videos.firstOrNull { it.season == target.season && it.episode == target.episode }?.title
+        } else {
+            null
+        }
+        return StreamPlaybackInfo(
+            url = stream.getStreamUrl(),
+            title = meta.name,
+            streamName = stream.name ?: stream.addonName,
+            year = Regex("(19|20)\\d{2}").find(meta.releaseInfo.orEmpty())?.value,
+            isExternal = stream.isExternal(),
+            isTorrent = stream.isTorrent(),
+            infoHash = stream.infoHash,
+            ytId = stream.ytId,
+            headers = stream.behaviorHints?.proxyHeaders?.request,
+            contentId = meta.id,
+            contentType = contentType,
+            contentName = meta.name,
+            poster = meta.poster,
+            backdrop = meta.background,
+            logo = meta.logo,
+            videoId = target.videoId,
+            season = target.season,
+            episode = target.episode,
+            episodeTitle = episodeTitle,
+            bingeGroup = stream.behaviorHints?.bingeGroup,
+            filename = stream.behaviorHints?.filename,
+            videoHash = stream.behaviorHints?.videoHash,
+            videoSize = stream.behaviorHints?.videoSize,
+            addonName = stream.addonName,
+            addonLogo = stream.addonLogo,
+            streamDescription = stream.description
+        )
+    }
+
+    // Pre-resolves the debrid redirect (follows it to the CDN and reads a byte),
+    // warming the server-side unrestrict + connection so playback starts fast.
+    private fun warmStreamUrl(url: String?, headers: Map<String, String>?) {
+        if (url.isNullOrBlank() || url == lastWarmedStreamUrl) return
+        if (url.startsWith("http", ignoreCase = true).not()) return
+        lastWarmedStreamUrl = url
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    requestMethod = "GET"
+                    setRequestProperty("Range", "bytes=0-1")
+                    headers?.forEach { (key, value) ->
+                        if (!key.equals("Range", ignoreCase = true)) setRequestProperty(key, value)
+                    }
+                }
+                try {
+                    connection.responseCode
+                    connection.inputStream?.use { it.read() }
+                } finally {
+                    connection.disconnect()
+                }
+            }
         }
     }
 

@@ -9,10 +9,14 @@ import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.model.LibraryListTab
 import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.MDBListRatings
+import com.nuvio.tv.ui.screens.stream.StreamPlaybackInfo
 
 data class MetaDetailsUiState(
     val isLoading: Boolean = true,
     val meta: Meta? = null,
+    // Top stream (<=40GB) pre-selected from the prefetched list so the Play button
+    // can jump straight into the player (Tier 1 instant play). Null until ready.
+    val preselectedPlayback: StreamPlaybackInfo? = null,
     val error: String? = null,
     val selectedSeason: Int = 1,
     val seasons: List<Int> = emptyList(),

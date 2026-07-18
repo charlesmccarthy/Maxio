@@ -96,6 +96,7 @@ import com.nuvio.tv.domain.model.MDBListRatings
 import com.nuvio.tv.domain.model.NextToWatch
 import com.nuvio.tv.domain.model.TraktCommentReview
 import com.nuvio.tv.domain.model.Video
+import com.nuvio.tv.ui.screens.stream.StreamPlaybackInfo
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.ui.components.ErrorState
 import com.nuvio.tv.ui.components.MetaDetailsSkeleton
@@ -222,7 +223,8 @@ fun MetaDetailsScreen(
         genres: String?,
         year: String?,
         runtime: Int?
-    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> }
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
+    onInstantPlay: (StreamPlaybackInfo) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val effectiveAutoplayEnabled by viewModel.effectiveAutoplayEnabled.collectAsStateWithLifecycle(
@@ -467,7 +469,11 @@ fun MetaDetailsScreen(
                             null
                         )
                     },
-                    showManualPlayOption = effectiveAutoplayEnabled,
+                    // Long-press → manual stream selection is always available so it
+                    // stays the escape hatch when the Play button does instant play.
+                    showManualPlayOption = true,
+                    preselectedPlayback = uiState.preselectedPlayback,
+                    onInstantPlay = { uiState.preselectedPlayback?.let(onInstantPlay) },
                     onPlayButtonFocused = { viewModel.onEvent(MetaDetailsEvent.OnPlayButtonFocused) },
                     onToggleLibrary = { viewModel.onEvent(MetaDetailsEvent.OnToggleLibrary) },
                     onLibraryLongPress = { viewModel.onEvent(MetaDetailsEvent.OnLibraryLongPress) },
@@ -654,6 +660,8 @@ private fun MetaDetailsContent(
     onPlayClick: (String) -> Unit,
     onPlayManuallyClick: (String) -> Unit,
     showManualPlayOption: Boolean,
+    preselectedPlayback: StreamPlaybackInfo? = null,
+    onInstantPlay: () -> Unit = {},
     onPlayButtonFocused: () -> Unit,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
@@ -1057,10 +1065,13 @@ private fun MetaDetailsContent(
     // Pre-compute gradient brushes once
 
     // Stable hero play callback
-    val heroPlayClick = remember(heroVideo, meta.id, onEpisodeClick, onPlayClick) {
+    val heroPlayClick = remember(heroVideo, meta.id, onEpisodeClick, onPlayClick, preselectedPlayback, onInstantPlay) {
         {
             markHeroRestore()
-            if (heroVideo != null) {
+            if (preselectedPlayback != null) {
+                // Top ≤40GB stream is pre-selected + pre-warmed — play it instantly.
+                onInstantPlay()
+            } else if (heroVideo != null) {
                 onEpisodeClick(heroVideo)
             } else {
                 onPlayClick(meta.id)
