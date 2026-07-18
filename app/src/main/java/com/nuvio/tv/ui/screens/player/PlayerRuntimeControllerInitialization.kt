@@ -50,14 +50,23 @@ private suspend fun PlayerRuntimeController.resolveCurrentStreamMimeType(
     url: String,
     headers: Map<String, String>
 ) {
-    currentStreamMimeType = PlayerMediaSourceFactory.probeMimeType(
-        url = url,
-        headers = headers,
-        filename = currentFilename
-    )
+    // Debrid streams are always progressive files (never HLS/DASH), so skip the
+    // network mime probe — for a debrid redirect URL it would cost ~0.5s following
+    // the redirect before the player even connects. ExoPlayer treats a null mime as
+    // progressive, which is correct here.
+    val isDebrid = currentAddonName?.contains("debrid", ignoreCase = true) == true
+    currentStreamMimeType = if (isDebrid) {
+        null
+    } else {
+        PlayerMediaSourceFactory.probeMimeType(
+            url = url,
+            headers = headers,
+            filename = currentFilename
+        )
+    }
     Log.d(
         PlayerRuntimeController.TAG,
-        "Resolved stream mimeType=${currentStreamMimeType ?: "unknown"} for url=$url"
+        "Resolved stream mimeType=${currentStreamMimeType ?: "unknown"} for url=$url (debrid=$isDebrid)"
     )
 }
 
@@ -478,7 +487,20 @@ internal suspend fun PlayerRuntimeController.prepareStartupSubtitles(
 
     _uiState.update { it.copy(isLoadingAddonSubtitles = true, addonSubtitlesError = null) }
 
-    val fetchedSubtitles = withTimeoutOrNull(STARTUP_SUBTITLE_PREFETCH_TIMEOUT_MS) {
+    // Use subtitles prefetched on the details page if they match this exact stream —
+    // avoids the ~3s blocking fetch before the first frame. Falls back to fetching.
+    val prefetched = subtitlePrefetchCache.getIfMatch(
+        com.nuvio.tv.core.stream.SubtitlePrefetchCache.Key(
+            videoId = currentVideoId ?: "",
+            contentType = contentType ?: "",
+            season = currentSeason,
+            episode = currentEpisode,
+            filename = currentFilename,
+            videoHash = currentVideoHash,
+            videoSize = currentVideoSize
+        )
+    )
+    val fetchedSubtitles = prefetched ?: withTimeoutOrNull(STARTUP_SUBTITLE_PREFETCH_TIMEOUT_MS) {
         fetchAddonSubtitlesNow()
     } ?: return StartupSubtitlePreparation(
         fetchedSubtitles = emptyList(),

@@ -178,10 +178,27 @@ class DebridStreamSource @Inject constructor(
                         videoSize = ts.behaviorHints?.videoSize
                     ),
                     addonName = label,
-                    addonLogo = null
+                    addonLogo = null,
+                    isCached = detectDebridCached(ts.name, ts.title, ts.description)
                 )
             }
         )
+    }
+
+    // Classifies a debrid stream as cached (instantly playable) vs uncached
+    // (needs downloading) from the addon's text markers. Covers Torbox
+    // ("Instant" / "Download"), Torrentio/RD/AD ("RD+"/"AD+" / "download"),
+    // and the ⚡ symbol some addons use. Uncached wins if "download" appears.
+    private fun detectDebridCached(vararg texts: String?): Boolean {
+        val combined = texts.filterNotNull().joinToString(" ").lowercase().trim()
+        if (combined.isEmpty()) return false
+        if (Regex("\\bdownload(ing|ed)?\\b|\\bqueued\\b|\\bdownloading\\b").containsMatchIn(combined)) {
+            return false
+        }
+        return combined.contains("instant") ||
+            combined.contains("cached") ||
+            combined.contains("⚡") ||
+            Regex("\\b[a-z]{2}\\+").containsMatchIn(combined)
     }
 
     private fun formatSize(bytes: Long?): String? {

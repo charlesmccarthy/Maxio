@@ -17,7 +17,10 @@ data class Stream(
     val externalUrl: String?,
     val behaviorHints: StreamBehaviorHints?,
     val addonName: String,
-    val addonLogo: String?
+    val addonLogo: String?,
+    // Debrid cache status: true = cached (instantly playable), false = uncached
+    // (needs downloading first), null = unknown / not a debrid stream.
+    val isCached: Boolean? = null
 ) {
     /**
      * Returns the primary stream source URL

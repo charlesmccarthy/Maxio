@@ -53,6 +53,7 @@ class PlayerRuntimeController(
     internal val trackPreferenceDataStore: com.nuvio.tv.data.local.TrackPreferenceDataStore,
     internal val tmdbService: TmdbService,
     internal val tmdbMetadataService: TmdbMetadataService,
+    internal val subtitlePrefetchCache: com.nuvio.tv.core.stream.SubtitlePrefetchCache,
     savedStateHandle: SavedStateHandle,
     internal val scope: CoroutineScope
 ) {

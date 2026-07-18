@@ -43,6 +43,7 @@ class PlayerViewModel @Inject constructor(
     private val trackPreferenceDataStore: com.nuvio.tv.data.local.TrackPreferenceDataStore,
     private val tmdbService: TmdbService,
     private val tmdbMetadataService: TmdbMetadataService,
+    private val subtitlePrefetchCache: com.nuvio.tv.core.stream.SubtitlePrefetchCache,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -65,6 +66,7 @@ class PlayerViewModel @Inject constructor(
         trackPreferenceDataStore = trackPreferenceDataStore,
         tmdbService = tmdbService,
         tmdbMetadataService = tmdbMetadataService,
+        subtitlePrefetchCache = subtitlePrefetchCache,
         savedStateHandle = savedStateHandle,
         scope = viewModelScope
     )

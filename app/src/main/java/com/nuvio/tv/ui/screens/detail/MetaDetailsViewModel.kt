@@ -8,7 +8,9 @@ import com.nuvio.tv.core.player.StreamAutoPlayPolicy
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
 import com.nuvio.tv.core.stream.StreamPrefetchCache
+import com.nuvio.tv.core.stream.SubtitlePrefetchCache
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.repository.SubtitleRepository
 import com.nuvio.tv.ui.screens.stream.StreamPlaybackInfo
 import com.nuvio.tv.core.tmdb.TmdbMetadataService
 import com.nuvio.tv.core.tmdb.TmdbService
@@ -92,6 +94,8 @@ class MetaDetailsViewModel @Inject constructor(
     private val playerSettingsDataStore: PlayerSettingsDataStore,
     private val streamRepository: StreamRepository,
     private val streamPrefetchCache: StreamPrefetchCache,
+    private val subtitleRepository: SubtitleRepository,
+    private val subtitlePrefetchCache: SubtitlePrefetchCache,
     private val activeTrailerState: ActiveTrailerState,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -114,6 +118,7 @@ class MetaDetailsViewModel @Inject constructor(
     private var commentsJob: Job? = null
     private var streamPrefetchJob: Job? = null
     private var lastWarmedStreamUrl: String? = null
+    private var subtitlePrefetchJob: Job? = null
 
     private var trailerDelayMs = 7000L
     private var trailerAutoplayEnabled = false
@@ -673,14 +678,55 @@ class MetaDetailsViewModel @Inject constructor(
         ) ?: return
         val ordered = StreamAutoPlaySelector.orderAddonStreams(entry.addonStreams, emptyList())
             .flatMap { it.streams }
+        // Only pre-select a stream that can actually play instantly:
+        //  - a directly-playable http(s) URL (not stremio://, magnet:, external, torrent);
+        //  - a cached debrid stream (isCached == true) or a non-debrid direct stream
+        //    (isCached == null) — never an uncached debrid stream (needs downloading);
+        //  - not known to exceed 40GB.
         val chosen = ordered.firstOrNull { stream ->
-            !stream.getStreamUrl().isNullOrBlank() &&
+            stream.isCached != false &&
+                !stream.isExternal() &&
+                !stream.isTorrent() &&
+                stream.getStreamUrl()?.startsWith("http", ignoreCase = true) == true &&
                 (stream.behaviorHints?.videoSize?.let { it <= MAX_PRESELECT_BYTES } ?: true)
         } ?: return
         val playback = buildPreselectedPlayback(meta, contentType, target, chosen)
         if (_uiState.value.preselectedPlayback?.url != playback.url) {
             _uiState.update { it.copy(preselectedPlayback = playback) }
             warmStreamUrl(playback.url, playback.headers)
+            startSubtitlePrefetch(meta, contentType, target, chosen)
+        }
+    }
+
+    // Prefetches addon subtitles for the pre-selected stream so the player's startup
+    // subtitle prep reads them from cache instead of blocking on a network fetch.
+    // Keyed on the same fields the player's fetch uses (incl. filename/hash/size).
+    private fun startSubtitlePrefetch(meta: Meta, contentType: String, target: PrefetchTarget, stream: Stream) {
+        val key = SubtitlePrefetchCache.Key(
+            videoId = target.videoId,
+            contentType = contentType,
+            season = target.season,
+            episode = target.episode,
+            filename = stream.behaviorHints?.filename,
+            videoHash = stream.behaviorHints?.videoHash,
+            videoSize = stream.behaviorHints?.videoSize
+        )
+        if (subtitlePrefetchCache.hasFreshComplete(key)) return
+        subtitlePrefetchJob?.cancel()
+        subtitlePrefetchCache.start(key)
+        subtitlePrefetchJob = viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                subtitleRepository.getSubtitles(
+                    type = contentType,
+                    id = meta.id,
+                    videoId = target.videoId,
+                    videoHash = key.videoHash,
+                    videoSize = key.videoSize,
+                    filename = key.filename
+                )
+            }.onSuccess { subs ->
+                subtitlePrefetchCache.complete(key, subs)
+            }
         }
     }
 
