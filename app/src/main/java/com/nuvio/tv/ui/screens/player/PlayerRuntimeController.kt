@@ -54,6 +54,7 @@ class PlayerRuntimeController(
     internal val tmdbService: TmdbService,
     internal val tmdbMetadataService: TmdbMetadataService,
     internal val subtitlePrefetchCache: com.nuvio.tv.core.stream.SubtitlePrefetchCache,
+    internal val playerMediaCache: com.nuvio.tv.core.player.PlayerMediaCache,
     savedStateHandle: SavedStateHandle,
     internal val scope: CoroutineScope
 ) {
@@ -116,7 +117,7 @@ class PlayerRuntimeController(
     internal val initialSeason: Int? = navigationArgs.initialSeason
     internal val initialEpisode: Int? = navigationArgs.initialEpisode
     internal val initialEpisodeTitle: String? = navigationArgs.initialEpisodeTitle
-    internal val mediaSourceFactory = PlayerMediaSourceFactory()
+    internal val mediaSourceFactory = PlayerMediaSourceFactory(playerMediaCache.cache)
 
     internal var currentVideoHash: String? = navigationArgs.videoHash
     internal var currentVideoSize: Long? = navigationArgs.videoSize

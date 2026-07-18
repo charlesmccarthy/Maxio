@@ -21,7 +21,9 @@ import java.net.URLDecoder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-internal class PlayerMediaSourceFactory {
+internal class PlayerMediaSourceFactory(
+    private val cache: androidx.media3.datasource.cache.Cache? = null
+) {
     private var customExtractorsFactory: ExtractorsFactory? = null
     private var customSubtitleParserFactory: SubtitleParser.Factory? = null
     private val playbackHttpClient by lazy {
@@ -54,6 +56,16 @@ internal class PlayerMediaSourceFactory {
             setUserAgent(DEFAULT_USER_AGENT)
         }
 
+        // Read progressive playback through the shared media cache so any bytes
+        // pre-buffered on the details page (Tier 2 instant play) are served from
+        // disk. Falls back to plain network when there's no cache / no cached bytes.
+        val progressiveDataSourceFactory: androidx.media3.datasource.DataSource.Factory = cache?.let { c ->
+            androidx.media3.datasource.cache.CacheDataSource.Factory()
+                .setCache(c)
+                .setUpstreamDataSourceFactory(httpDataSourceFactory)
+                .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } ?: httpDataSourceFactory
+
         val resolvedMimeType = mimeTypeOverride ?: inferMimeType(url = url, filename = null)
         val isHls = resolvedMimeType == MimeTypes.APPLICATION_M3U8
         val isDash = resolvedMimeType == MimeTypes.APPLICATION_MPD
@@ -67,7 +79,7 @@ internal class PlayerMediaSourceFactory {
 
         val mediaItem = mediaItemBuilder.build()
         val extractorsFactory = customExtractorsFactory ?: DefaultExtractorsFactory()
-        val defaultFactory = DefaultMediaSourceFactory(httpDataSourceFactory, extractorsFactory).apply {
+        val defaultFactory = DefaultMediaSourceFactory(progressiveDataSourceFactory, extractorsFactory).apply {
             customSubtitleParserFactory?.let { parserFactory ->
                 setSubtitleParserFactory(parserFactory)
             }

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.core.player.StreamAutoPlayPolicy
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.core.player.PlayerMediaCache
 import com.nuvio.tv.core.player.StreamAutoPlaySelector
 import com.nuvio.tv.core.stream.StreamPrefetchCache
 import com.nuvio.tv.core.stream.SubtitlePrefetchCache
@@ -71,6 +72,9 @@ import javax.inject.Inject
 
 private const val TAG = "MetaDetailsViewModel"
 private const val MAX_PRESELECT_BYTES = 40L * 1024 * 1024 * 1024
+// How much of the opening to pre-buffer into the media cache for instant play.
+private const val PREBUFFER_BYTES = 12L * 1024 * 1024 // 12 MB
+private val TITLE_STOPWORDS = setOf("the", "and", "a", "an", "of", "to", "in", "on", "with", "for", "from")
 
 @HiltViewModel
 class MetaDetailsViewModel @Inject constructor(
@@ -96,6 +100,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val streamPrefetchCache: StreamPrefetchCache,
     private val subtitleRepository: SubtitleRepository,
     private val subtitlePrefetchCache: SubtitlePrefetchCache,
+    private val playerMediaCache: PlayerMediaCache,
     private val activeTrailerState: ActiveTrailerState,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -688,7 +693,12 @@ class MetaDetailsViewModel @Inject constructor(
                 !stream.isExternal() &&
                 !stream.isTorrent() &&
                 stream.getStreamUrl()?.startsWith("http", ignoreCase = true) == true &&
-                (stream.behaviorHints?.videoSize?.let { it <= MAX_PRESELECT_BYTES } ?: true)
+                (stream.behaviorHints?.videoSize?.let { it <= MAX_PRESELECT_BYTES } ?: true) &&
+                // Sanity check: the filename must actually match the title, so a
+                // wrong-movie file cached in the debrid library (e.g. "017_education.mkv"
+                // matched to "Bad Education") is never auto-played. On no match we don't
+                // pre-select and Play falls back to the normal stream picker.
+                streamNameMatchesTitle(stream.name, meta.name)
         } ?: return
         val playback = buildPreselectedPlayback(meta, contentType, target, chosen)
         if (_uiState.value.preselectedPlayback?.url != playback.url) {
@@ -728,6 +738,27 @@ class MetaDetailsViewModel @Inject constructor(
                 subtitlePrefetchCache.complete(key, subs)
             }
         }
+    }
+
+    // True if the stream filename plausibly matches the title — every significant
+    // title word must appear as a token in the filename. Guards instant play from
+    // wrong-movie files that happen to be cached in the debrid library.
+    private fun streamNameMatchesTitle(streamName: String?, title: String): Boolean {
+        val nameTokens = (streamName ?: "")
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .split(" ")
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (nameTokens.isEmpty()) return false
+        val titleWords = title
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .split(" ")
+            .filter { it.length >= 3 && it !in TITLE_STOPWORDS }
+        // Very short titles (all stopwords / short words) can't be matched reliably.
+        if (titleWords.isEmpty()) return true
+        return titleWords.all { it in nameTokens }
     }
 
     private fun buildPreselectedPlayback(
@@ -771,30 +802,66 @@ class MetaDetailsViewModel @Inject constructor(
         )
     }
 
-    // Pre-resolves the debrid redirect (follows it to the CDN and reads a byte),
-    // warming the server-side unrestrict + connection so playback starts fast.
+    // Pre-buffers the opening of the pre-selected stream into the shared media cache
+    // so the player reads the first frame from disk (near-instant). Falls back to a
+    // lightweight redirect warm-up when the cache is unavailable.
     private fun warmStreamUrl(url: String?, headers: Map<String, String>?) {
         if (url.isNullOrBlank() || url == lastWarmedStreamUrl) return
         if (url.startsWith("http", ignoreCase = true).not()) return
         lastWarmedStreamUrl = url
+        val cache = playerMediaCache.cache
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-                    instanceFollowRedirects = true
-                    connectTimeout = 8000
-                    readTimeout = 8000
-                    requestMethod = "GET"
-                    setRequestProperty("Range", "bytes=0-1")
-                    headers?.forEach { (key, value) ->
-                        if (!key.equals("Range", ignoreCase = true)) setRequestProperty(key, value)
-                    }
+            if (cache != null) {
+                preBufferIntoCache(cache, url, headers)
+            } else {
+                plainWarmUrl(url, headers)
+            }
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun preBufferIntoCache(
+        cache: androidx.media3.datasource.cache.Cache,
+        url: String,
+        headers: Map<String, String>?
+    ) {
+        runCatching {
+            val upstreamFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(8000)
+                .setReadTimeoutMs(8000)
+                .apply { if (!headers.isNullOrEmpty()) setDefaultRequestProperties(headers) }
+            val cacheDataSource = androidx.media3.datasource.cache.CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(upstreamFactory)
+                .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .createDataSource()
+            val dataSpec = androidx.media3.datasource.DataSpec.Builder()
+                .setUri(url)
+                .setPosition(0)
+                .setLength(PREBUFFER_BYTES)
+                .build()
+            androidx.media3.datasource.cache.CacheWriter(cacheDataSource, dataSpec, null, null).cache()
+        }
+    }
+
+    private fun plainWarmUrl(url: String, headers: Map<String, String>?) {
+        runCatching {
+            val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                instanceFollowRedirects = true
+                connectTimeout = 8000
+                readTimeout = 8000
+                requestMethod = "GET"
+                setRequestProperty("Range", "bytes=0-1")
+                headers?.forEach { (key, value) ->
+                    if (!key.equals("Range", ignoreCase = true)) setRequestProperty(key, value)
                 }
-                try {
-                    connection.responseCode
-                    connection.inputStream?.use { it.read() }
-                } finally {
-                    connection.disconnect()
-                }
+            }
+            try {
+                connection.responseCode
+                connection.inputStream?.use { it.read() }
+            } finally {
+                connection.disconnect()
             }
         }
     }
