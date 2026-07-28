@@ -1301,73 +1301,45 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    AnimatedVisibility(
-                        visible = uiState.showMoreDialog,
-                        enter = slideInHorizontally(
-                            animationSpec = tween(180),
-                            initialOffsetX = { it / 2 }
-                        ) + fadeIn(animationSpec = tween(180)),
-                        exit = slideOutHorizontally(
-                            animationSpec = tween(160),
-                            targetOffsetX = { it / 2 }
-                        ) + fadeOut(animationSpec = tween(160))
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ControlButton(
-                                icon = Icons.Default.Speed,
-                                contentDescription = "Playback speed",
-                                onClick = {
-                                    onShowSpeedDialog()
-                                },
-                                upFocusRequester = progressBarFocusRequester,
-                                onDownKey = handleDownFromControls,
-                                onFocused = onResetHideTimer
-                            )
-                            ControlButton(
-                                icon = Icons.Default.AspectRatio,
-                                iconPainter = customAspectPainter,
-                                contentDescription = "Aspect ratio",
-                                onClick = {
-                                    onToggleAspectRatio()
-                                },
-                                upFocusRequester = progressBarFocusRequester,
-                                onDownKey = handleDownFromControls,
-                                onFocused = onResetHideTimer
-                            )
-                            ControlButton(
-                                icon = Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = "Open in external player",
-                                onClick = {
-                                    onOpenInExternalPlayer()
-                                },
-                                upFocusRequester = progressBarFocusRequester,
-                                onDownKey = handleDownFromControls,
-                                onFocused = onResetHideTimer
-                            )
-                            ControlButton(
-                                icon = Icons.Default.Info,
-                                contentDescription = "Stream info",
-                                onClick = {
-                                    onShowStreamInfo()
-                                },
-                                upFocusRequester = progressBarFocusRequester,
-                                onDownKey = handleDownFromControls,
-                                onFocused = onResetHideTimer
-                            )
-                        }
-                    }
-
+                    // Previously hidden behind a right chevron ("more actions"); now
+                    // always shown so pressing down reveals every control at once.
                     ControlButton(
-                        icon = if (uiState.showMoreDialog) {
-                            Icons.AutoMirrored.Filled.KeyboardArrowLeft
-                        } else {
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight
+                        icon = Icons.Default.Speed,
+                        contentDescription = "Playback speed",
+                        onClick = {
+                            onShowSpeedDialog()
                         },
-                        contentDescription = if (uiState.showMoreDialog) "Close more actions" else "More actions",
-                        onClick = onToggleMoreActions,
+                        upFocusRequester = progressBarFocusRequester,
+                        onDownKey = handleDownFromControls,
+                        onFocused = onResetHideTimer
+                    )
+                    ControlButton(
+                        icon = Icons.Default.AspectRatio,
+                        iconPainter = customAspectPainter,
+                        contentDescription = "Aspect ratio",
+                        onClick = {
+                            onToggleAspectRatio()
+                        },
+                        upFocusRequester = progressBarFocusRequester,
+                        onDownKey = handleDownFromControls,
+                        onFocused = onResetHideTimer
+                    )
+                    ControlButton(
+                        icon = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = "Open in external player",
+                        onClick = {
+                            onOpenInExternalPlayer()
+                        },
+                        upFocusRequester = progressBarFocusRequester,
+                        onDownKey = handleDownFromControls,
+                        onFocused = onResetHideTimer
+                    )
+                    ControlButton(
+                        icon = Icons.Default.Info,
+                        contentDescription = "Stream info",
+                        onClick = {
+                            onShowStreamInfo()
+                        },
                         upFocusRequester = progressBarFocusRequester,
                         onDownKey = handleDownFromControls,
                         onFocused = onResetHideTimer
