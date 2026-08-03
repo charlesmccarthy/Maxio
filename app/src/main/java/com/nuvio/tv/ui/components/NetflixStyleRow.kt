@@ -742,8 +742,9 @@ private fun CarouselPosterCard(
                 item.releaseInfo?.let { YEAR_REGEX.find(it)?.value }
             }
             val character = item.characterName
-            val metaLine = remember(year, item.episodeCount) {
+            val metaLine = remember(year, item.episodeCount, item.imdbRating) {
                 listOfNotNull(
+                    item.imdbRating?.takeIf { it > 0f }?.let { "★ ${String.format("%.1f", it)}" },
                     year,
                     item.episodeCount?.let { count ->
                         if (count == 1) "1 episode" else "$count episodes"

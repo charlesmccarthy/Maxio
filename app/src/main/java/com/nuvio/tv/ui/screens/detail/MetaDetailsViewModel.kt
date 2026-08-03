@@ -161,7 +161,9 @@ class MetaDetailsViewModel @Inject constructor(
             state.copy(
                 backgroundTrailerUrl = handoff.videoUrl,
                 backgroundTrailerAudioUrl = handoff.audioUrl,
-                backgroundTrailerSeekMs = handoff.positionMs
+                // Restart the trailer from the beginning on the detail page rather than
+                // resuming where the home hero left off (matches the filmography flow).
+                backgroundTrailerSeekMs = 0L
             )
         }
     }
