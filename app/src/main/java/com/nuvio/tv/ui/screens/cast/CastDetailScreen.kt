@@ -213,7 +213,9 @@ private fun CastDetailContent(
                         onSelectedIndexChange = { selectedFilmographyIndex = it },
                         onItemLongPress = { item -> optionsItem = item },
                         isItemLiked = { item -> viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true },
+                        onTrailerProgressChanged = viewModel::onTrailerProgressChanged,
                         onItemClick = { item ->
+                            viewModel.storeActiveTrailer(item)
                             onNavigateToDetail(item.id, item.apiType, null)
                         }
                     )
@@ -237,6 +239,7 @@ private fun CastDetailContent(
                 isLiked = viewModel.likedItemStatus["${item.apiType}:${item.id}"] == true,
                 onDismiss = { optionsItem = null },
                 onDetails = {
+                    viewModel.storeActiveTrailer(item)
                     onNavigateToDetail(item.id, item.apiType, null)
                     optionsItem = null
                 },
@@ -458,6 +461,7 @@ private fun FilmographyRow(
     onSelectedIndexChange: (Int) -> Unit,
     onItemLongPress: (MetaPreview) -> Unit,
     isItemLiked: (MetaPreview) -> Boolean,
+    onTrailerProgressChanged: (String, Long) -> Unit,
     onItemClick: (MetaPreview) -> Unit
 ) {
     NetflixStyleRow(
@@ -477,6 +481,7 @@ private fun FilmographyRow(
         trailerMuted = trailerMuted,
         onRequestTrailerPreview = onRequestTrailerPreview,
         onItemFocus = onItemFocus,
+        onTrailerProgressChanged = onTrailerProgressChanged,
         showDescriptionInExpandedCard = true,
         showCreditInfo = true
     )

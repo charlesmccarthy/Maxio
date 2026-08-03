@@ -11,6 +11,7 @@ import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.LikedMediaDataStore
 import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.remote.api.TmdbApi
+import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.MetaPreview
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,6 +33,7 @@ class CastDetailViewModel @Inject constructor(
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val trailerService: TrailerService,
     private val likedMediaDataStore: LikedMediaDataStore,
+    private val activeTrailerState: ActiveTrailerState,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -55,6 +57,16 @@ class CastDetailViewModel @Inject constructor(
         private set
     var trailerMuted: Boolean = true
         private set
+    private var lastTrailerPositionMs: Long = 0L
+
+    fun onTrailerProgressChanged(itemId: String, positionMs: Long) {
+        lastTrailerPositionMs = positionMs
+    }
+
+    fun storeActiveTrailer(item: MetaPreview) {
+        val videoUrl = trailerPreviewUrls[item.id] ?: return
+        activeTrailerState.store(item.id, videoUrl, trailerPreviewAudioUrls[item.id], lastTrailerPositionMs)
+    }
 
     init {
         loadPersonDetail()

@@ -614,13 +614,16 @@ private fun ExpandedCardTitle(
         }
 
         val character = item.characterName?.takeIf { showCreditInfo && it.isNotBlank() }
+        val ratingText = item.imdbRating
+            ?.takeIf { showCreditInfo && it > 0f }
+            ?.let { "★ ${String.format("%.1f", it)}" }
         val episodeText = item.episodeCount
             ?.takeIf { showCreditInfo && it > 0 }
             ?.let { if (it == 1) "1 episode" else "$it episodes" }
-        if (character != null || episodeText != null) {
+        if (character != null || ratingText != null || episodeText != null) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = listOfNotNull(character?.let { "as $it" }, episodeText).joinToString("  •  "),
+                text = listOfNotNull(character?.let { "as $it" }, ratingText, episodeText).joinToString("  •  "),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White,
                 maxLines = 1,
