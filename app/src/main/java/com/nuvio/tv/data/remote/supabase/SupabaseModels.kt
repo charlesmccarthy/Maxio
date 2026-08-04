@@ -88,7 +88,8 @@ data class SupabaseWatchProgress(
     val duration: Long,
     @SerialName("last_watched") val lastWatched: Long,
     @SerialName("progress_key") val progressKey: String,
-    @SerialName("profile_id") val profileId: Int = 1
+    @SerialName("profile_id") val profileId: Int = 1,
+    @SerialName("progress_percent") val progressPercent: Float? = null
 )
 
 @Serializable

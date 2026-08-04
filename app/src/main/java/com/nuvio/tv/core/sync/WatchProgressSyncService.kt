@@ -113,6 +113,7 @@ class WatchProgressSyncService @Inject constructor(
                             put("duration", progress.duration)
                             put("last_watched", progress.lastWatched)
                             put("progress_key", key)
+                            progress.progressPercent?.let { put("progress_percent", it) }
                         }
                     }
                 })
@@ -152,6 +153,7 @@ class WatchProgressSyncService @Inject constructor(
                         put("duration", progress.duration)
                         put("last_watched", progress.lastWatched)
                         put("progress_key", key)
+                        progress.progressPercent?.let { put("progress_percent", it) }
                     }
                 })
                 put("p_profile_id", profileId)
@@ -210,6 +212,7 @@ class WatchProgressSyncService @Inject constructor(
                     position = entry.position,
                     duration = entry.duration,
                     lastWatched = entry.lastWatched,
+                    progressPercent = entry.progressPercent,
                     source = WatchProgress.SOURCE_LOCAL
                 )
             }
