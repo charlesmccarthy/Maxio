@@ -290,6 +290,16 @@ fun TraktScreen(
                         onClick = { showWatchProgressDialog = true }
                     )
                     SettingsActionRow(
+                        title = stringResource(R.string.trakt_import_title),
+                        subtitle = stringResource(R.string.trakt_import_subtitle),
+                        value = if (uiState.isImporting) {
+                            stringResource(R.string.trakt_importing)
+                        } else {
+                            stringResource(R.string.trakt_import_button)
+                        },
+                        onClick = { if (!uiState.isImporting) viewModel.onImportFromTrakt() }
+                    )
+                    SettingsActionRow(
                         title = stringResource(R.string.trakt_continue_watching_window),
                         subtitle = stringResource(R.string.trakt_continue_watching_subtitle),
                         value = cwWindowFormatter(uiState.continueWatchingDaysCap),

@@ -10,6 +10,7 @@ import com.nuvio.tv.data.local.TraktAuthState
 import com.nuvio.tv.data.local.TraktSettingsDataStore
 import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.data.repository.TraktAuthService
+import com.nuvio.tv.data.repository.TraktImportService
 import com.nuvio.tv.data.repository.TraktProgressService
 import com.nuvio.tv.data.repository.TraktTokenPollResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -47,6 +48,7 @@ data class TraktUiState(
     val showMetaComments: Boolean = TraktSettingsDataStore.DEFAULT_SHOW_META_COMMENTS,
     val watchProgressSource: WatchProgressSource = TraktSettingsDataStore.DEFAULT_WATCH_PROGRESS_SOURCE,
     val connectedStats: TraktProgressService.TraktCachedStats? = null,
+    val isImporting: Boolean = false,
     val statusMessage: String? = null,
     val errorMessage: String? = null
 )
@@ -58,6 +60,7 @@ class TraktViewModel @Inject constructor(
     private val traktProgressService: TraktProgressService,
     private val traktSettingsDataStore: TraktSettingsDataStore,
     private val startupSyncService: StartupSyncService,
+    private val traktImportService: TraktImportService,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: Context
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TraktUiState())
@@ -135,6 +138,36 @@ class TraktViewModel @Inject constructor(
                         context.getString(R.string.trakt_watch_progress_trakt_selected)
                     } else {
                         context.getString(R.string.trakt_watch_progress_nuvio_selected)
+                    }
+                )
+            }
+        }
+    }
+
+    fun onImportFromTrakt() {
+        if (_uiState.value.isImporting) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isImporting = true, statusMessage = null, errorMessage = null) }
+            val result = traktImportService.importFromTrakt()
+            _uiState.update { state ->
+                result.fold(
+                    onSuccess = { summary ->
+                        state.copy(
+                            isImporting = false,
+                            watchProgressSource = WatchProgressSource.NUVIO_SYNC,
+                            statusMessage = context.getString(
+                                R.string.trakt_import_success,
+                                summary.libraryCount,
+                                summary.continueWatchingCount
+                            )
+                        )
+                    },
+                    onFailure = { error ->
+                        state.copy(
+                            isImporting = false,
+                            errorMessage = error.message
+                                ?: context.getString(R.string.trakt_import_failed)
+                        )
                     }
                 )
             }

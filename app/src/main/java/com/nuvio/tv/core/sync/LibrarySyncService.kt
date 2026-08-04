@@ -5,6 +5,8 @@ import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.data.local.LibraryPreferences
 import com.nuvio.tv.data.local.TraktAuthDataStore
+import com.nuvio.tv.data.local.TraktSettingsDataStore
+import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.data.remote.supabase.SupabaseLibraryItem
 import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.domain.model.SavedLibraryItem
@@ -29,6 +31,7 @@ class LibrarySyncService @Inject constructor(
     private val postgrest: Postgrest,
     private val libraryPreferences: LibraryPreferences,
     private val traktAuthDataStore: TraktAuthDataStore,
+    private val traktSettingsDataStore: TraktSettingsDataStore,
     private val profileManager: ProfileManager
 ) {
     private suspend fun <T> withJwtRefreshRetry(block: suspend () -> T): T {
@@ -40,10 +43,19 @@ class LibrarySyncService @Inject constructor(
         }
     }
 
+    // Library syncs to Supabase unless Trakt is the ACTIVE source (connected AND selected).
+    // Choosing Maxio Cloud (NUVIO_SYNC) enables Supabase sync even while a Trakt token exists,
+    // which is what makes the "keep Trakt as a toggle" migration work end to end.
+    private suspend fun shouldUseSupabaseLibrarySync(): Boolean {
+        val hasEffectiveTraktConnection = traktAuthDataStore.isEffectivelyAuthenticated.first()
+        val source = traktSettingsDataStore.watchProgressSource.first()
+        return !(hasEffectiveTraktConnection && source == WatchProgressSource.TRAKT)
+    }
+
     suspend fun pushToRemote(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            if (traktAuthDataStore.isAuthenticated.first()) {
-                Log.d(TAG, "Trakt connected, skipping library push")
+            if (!shouldUseSupabaseLibrarySync()) {
+                Log.d(TAG, "Trakt is the active source, skipping library push")
                 return@withContext Result.success(Unit)
             }
 
@@ -87,8 +99,8 @@ class LibrarySyncService @Inject constructor(
 
     suspend fun pullFromRemote(): Result<List<SavedLibraryItem>> = withContext(Dispatchers.IO) {
         try {
-            if (traktAuthDataStore.isAuthenticated.first()) {
-                Log.d(TAG, "Trakt connected, skipping library pull")
+            if (!shouldUseSupabaseLibrarySync()) {
+                Log.d(TAG, "Trakt is the active source, skipping library pull")
                 return@withContext Result.success(emptyList())
             }
 

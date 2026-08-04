@@ -16,6 +16,7 @@ import com.nuvio.tv.domain.model.MetaCompany
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PersonDetail
 import com.nuvio.tv.domain.model.PosterShape
+import com.nuvio.tv.domain.model.TraktCommentReview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -43,6 +44,61 @@ class TmdbMetadataService @Inject constructor(
     private val entityHeaderCache = ConcurrentHashMap<String, TmdbEntityHeader>()
     private val entityRailCache = ConcurrentHashMap<String, List<MetaPreview>>()
     private val entityBrowseCache = ConcurrentHashMap<String, TmdbEntityBrowseData>()
+
+    private val reviewsCache = ConcurrentHashMap<String, List<TraktCommentReview>>()
+
+    /**
+     * Fetches user reviews for a movie/series from TMDB and maps them onto the shared
+     * comment model so the details-page comments UI can render them the same way it
+     * renders Trakt comments. Reviews are not language-filtered (TMDB's are mostly English
+     * and filtering returns almost nothing).
+     */
+    suspend fun fetchReviews(
+        tmdbId: String,
+        contentType: ContentType
+    ): List<TraktCommentReview> = withContext(Dispatchers.IO) {
+        val numericId = tmdbId.toIntOrNull() ?: return@withContext emptyList()
+        val tmdbType = when (contentType) {
+            ContentType.SERIES, ContentType.TV -> "tv"
+            else -> "movie"
+        }
+        val cacheKey = "$tmdbType:$numericId"
+        reviewsCache[cacheKey]?.let { return@withContext it }
+
+        try {
+            val response = when (tmdbType) {
+                "tv" -> tmdbApi.getTvReviews(numericId, TMDB_API_KEY)
+                else -> tmdbApi.getMovieReviews(numericId, TMDB_API_KEY)
+            }
+            val results = response.body()?.results.orEmpty()
+            val mapped = results.mapNotNull { review ->
+                val content = review.content?.trim().orEmpty()
+                if (content.isBlank()) return@mapNotNull null
+                val displayName = review.authorDetails?.name?.takeIf { it.isNotBlank() }
+                    ?: review.author?.takeIf { it.isNotBlank() }
+                    ?: review.authorDetails?.username?.takeIf { it.isNotBlank() }
+                    ?: "TMDB user"
+                val rating = review.authorDetails?.rating?.toInt()?.takeIf { it > 0 }
+                TraktCommentReview(
+                    id = review.id.hashCode().toLong(),
+                    authorDisplayName = displayName,
+                    authorUsername = review.authorDetails?.username,
+                    comment = content,
+                    spoiler = false,
+                    review = true,
+                    likes = 0,
+                    rating = rating,
+                    createdAt = review.createdAt,
+                    updatedAt = review.updatedAt
+                )
+            }
+            reviewsCache[cacheKey] = mapped
+            mapped
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch TMDB reviews for $tmdbId", e)
+            emptyList()
+        }
+    }
 
     suspend fun fetchEnrichment(
         tmdbId: String,

@@ -75,6 +75,7 @@ fun CommentsSection(
     comments: List<TraktCommentReview>,
     isLoading: Boolean,
     error: String?,
+    fromTrakt: Boolean = true,
     upFocusRequester: FocusRequester? = null,
     onRetry: () -> Unit,
     onCommentClick: (TraktCommentReview) -> Unit,
@@ -98,15 +99,17 @@ fun CommentsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.trakt_logo_wordmark),
-                contentDescription = "Trakt",
-                modifier = Modifier
-                    .offset(y = (-1).dp)
-                    .width(47.dp)
-                    .height(20.dp),
-                colorFilter = ColorFilter.tint(NuvioColors.TextPrimary)
-            )
+            if (fromTrakt) {
+                Image(
+                    painter = painterResource(id = R.drawable.trakt_logo_wordmark),
+                    contentDescription = "Trakt",
+                    modifier = Modifier
+                        .offset(y = (-1).dp)
+                        .width(47.dp)
+                        .height(20.dp),
+                    colorFilter = ColorFilter.tint(NuvioColors.TextPrimary)
+                )
+            }
             Text(
                 text = stringResource(R.string.detail_comments_title),
                 style = MaterialTheme.typography.titleLarge,
@@ -115,7 +118,11 @@ fun CommentsSection(
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = stringResource(R.string.detail_comments_subtitle),
+            text = if (fromTrakt) {
+                stringResource(R.string.detail_comments_subtitle)
+            } else {
+                stringResource(R.string.detail_comments_subtitle_tmdb)
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = NuvioColors.TextSecondary,
             modifier = Modifier.padding(horizontal = 48.dp)
@@ -175,7 +182,11 @@ fun CommentsSection(
 
             comments.isEmpty() -> {
                 Text(
-                    text = stringResource(R.string.detail_comments_empty),
+                    text = if (fromTrakt) {
+                        stringResource(R.string.detail_comments_empty)
+                    } else {
+                        stringResource(R.string.detail_comments_empty_tmdb)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = NuvioColors.TextSecondary,
                     modifier = Modifier.padding(horizontal = 48.dp)

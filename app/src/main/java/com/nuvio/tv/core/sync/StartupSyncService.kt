@@ -268,6 +268,22 @@ class StartupSyncService @Inject constructor(
                     watchProgressRepository.isSyncingFromRemote = false
                 }
             } else if (shouldUseSupabaseWatchProgressSync) {
+                // Trakt is connected but the user chose Maxio Cloud as the sync source.
+                // Pull library too — the library service is now source-aware, so this
+                // keeps the watchlist cross-device even while a Trakt token exists.
+                libraryRepository.isSyncingFromRemote = true
+                try {
+                    val remoteLibraryItems = librarySyncService.pullFromRemote().getOrElse { throw it }
+                    Log.d(TAG, "Pulled ${remoteLibraryItems.size} library items from remote")
+                    libraryPreferences.mergeRemoteItems(remoteLibraryItems)
+                    libraryRepository.hasCompletedInitialPull = true
+                    Log.d(TAG, "Reconciled local library with ${remoteLibraryItems.size} remote items")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to pull library, continuing with other syncs", e)
+                } finally {
+                    libraryRepository.isSyncingFromRemote = false
+                }
+
                 try {
                     val remoteWatchedItems = watchedItemsSyncService.pullFromRemote().getOrElse { throw it }
                     Log.d(TAG, "Pulled ${remoteWatchedItems.size} watched items from remote")

@@ -56,6 +56,22 @@ interface TmdbApi {
         @Query("language") language: String? = null
     ): Response<TmdbDetailsResponse>
 
+    @GET("movie/{movie_id}/reviews")
+    suspend fun getMovieReviews(
+        @Path("movie_id") movieId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null,
+        @Query("page") page: Int = 1
+    ): Response<TmdbReviewsResponse>
+
+    @GET("tv/{tv_id}/reviews")
+    suspend fun getTvReviews(
+        @Path("tv_id") tvId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String? = null,
+        @Query("page") page: Int = 1
+    ): Response<TmdbReviewsResponse>
+
     @GET("movie/{movie_id}/credits")
     suspend fun getMovieCredits(
         @Path("movie_id") movieId: Int,
@@ -604,4 +620,31 @@ data class TmdbNetworkDetailsResponse(
 @JsonClass(generateAdapter = true)
 data class TmdbGenreListResponse(
     @Json(name = "genres") val genres: List<TmdbGenre> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbReviewsResponse(
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "page") val page: Int = 1,
+    @Json(name = "total_pages") val totalPages: Int = 1,
+    @Json(name = "results") val results: List<TmdbReview> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbReview(
+    @Json(name = "id") val id: String,
+    @Json(name = "author") val author: String? = null,
+    @Json(name = "author_details") val authorDetails: TmdbAuthorDetails? = null,
+    @Json(name = "content") val content: String? = null,
+    @Json(name = "created_at") val createdAt: String? = null,
+    @Json(name = "updated_at") val updatedAt: String? = null,
+    @Json(name = "url") val url: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbAuthorDetails(
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "username") val username: String? = null,
+    @Json(name = "avatar_path") val avatarPath: String? = null,
+    @Json(name = "rating") val rating: Float? = null
 )

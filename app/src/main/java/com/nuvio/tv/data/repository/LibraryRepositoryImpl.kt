@@ -4,6 +4,8 @@ import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.core.sync.LibrarySyncService
 import com.nuvio.tv.data.local.LibraryPreferences
 import com.nuvio.tv.data.local.TraktAuthDataStore
+import com.nuvio.tv.data.local.TraktSettingsDataStore
+import com.nuvio.tv.data.local.WatchProgressSource
 import com.nuvio.tv.domain.model.LibraryEntry
 import com.nuvio.tv.domain.model.LibraryEntryInput
 import com.nuvio.tv.domain.model.LibraryListTab
@@ -20,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -34,6 +37,7 @@ import javax.inject.Singleton
 class LibraryRepositoryImpl @Inject constructor(
     private val libraryPreferences: LibraryPreferences,
     private val traktAuthDataStore: TraktAuthDataStore,
+    private val traktSettingsDataStore: TraktSettingsDataStore,
     private val traktLibraryService: TraktLibraryService,
     private val librarySyncService: LibrarySyncService,
     private val authManager: AuthManager
@@ -55,9 +59,23 @@ class LibraryRepositoryImpl @Inject constructor(
         }
     }
 
-    override val sourceMode: Flow<LibrarySourceMode> = traktAuthDataStore.isEffectivelyAuthenticated
-        .map { isAuthenticated ->
-            if (isAuthenticated) LibrarySourceMode.TRAKT else LibrarySourceMode.LOCAL
+    // Trakt is only the active library source when the user is authenticated AND has
+    // chosen Trakt as their sync source. Choosing Maxio Cloud (NUVIO_SYNC) — or not being
+    // connected — routes the library through the local store + Supabase sync instead.
+    private val useTraktSource: Flow<Boolean> = combine(
+        traktAuthDataStore.isEffectivelyAuthenticated,
+        traktSettingsDataStore.watchProgressSource
+    ) { authenticated, source ->
+        authenticated && source == WatchProgressSource.TRAKT
+    }.distinctUntilChanged()
+
+    private suspend fun useTraktNow(): Boolean =
+        traktAuthDataStore.isEffectivelyAuthenticated.first() &&
+            traktSettingsDataStore.watchProgressSource.first() == WatchProgressSource.TRAKT
+
+    override val sourceMode: Flow<LibrarySourceMode> = useTraktSource
+        .map { useTrakt ->
+            if (useTrakt) LibrarySourceMode.TRAKT else LibrarySourceMode.LOCAL
         }
         .distinctUntilChanged()
 
@@ -132,7 +150,7 @@ class LibraryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun toggleDefault(item: LibraryEntryInput) {
-        if (traktAuthDataStore.isEffectivelyAuthenticated.first()) {
+        if (useTraktNow()) {
             traktLibraryService.toggleWatchlist(item)
             return
         }
@@ -147,7 +165,7 @@ class LibraryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getMembershipSnapshot(item: LibraryEntryInput): ListMembershipSnapshot {
-        if (traktAuthDataStore.isEffectivelyAuthenticated.first()) {
+        if (useTraktNow()) {
             return traktLibraryService.getMembershipSnapshot(item)
         }
         val inLocal = libraryPreferences.isInLibrary(item.itemId, item.itemType).first()
@@ -155,7 +173,7 @@ class LibraryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun applyMembershipChanges(item: LibraryEntryInput, changes: ListMembershipChanges) {
-        if (traktAuthDataStore.isEffectivelyAuthenticated.first()) {
+        if (useTraktNow()) {
             traktLibraryService.applyMembershipChanges(item, changes)
             return
         }
@@ -200,7 +218,7 @@ class LibraryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun refreshNow() {
-        if (traktAuthDataStore.isEffectivelyAuthenticated.first()) {
+        if (useTraktNow()) {
             traktLibraryService.refreshNow()
         }
     }

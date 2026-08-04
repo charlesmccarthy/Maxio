@@ -62,6 +62,7 @@ data class MetaDetailsUiState(
     val isCommentsLoading: Boolean = false,
     val commentsError: String? = null,
     val shouldShowCommentsSection: Boolean = false,
+    val commentsFromTrakt: Boolean = false,
     val selectedComment: TraktCommentReview? = null,
     val userMessage: String? = null,
     val userMessageIsError: Boolean = false

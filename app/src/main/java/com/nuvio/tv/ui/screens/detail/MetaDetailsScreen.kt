@@ -399,6 +399,7 @@ fun MetaDetailsScreen(
                     isCommentsLoading = uiState.isCommentsLoading,
                     commentsError = uiState.commentsError,
                     shouldShowCommentsSection = uiState.shouldShowCommentsSection,
+                    commentsFromTrakt = uiState.commentsFromTrakt,
                     selectedComment = uiState.selectedComment,
                     onSeasonSelected = { viewModel.onEvent(MetaDetailsEvent.OnSeasonSelected(it)) },
                     onEpisodeClick = { video ->
@@ -653,6 +654,7 @@ private fun MetaDetailsContent(
     isCommentsLoading: Boolean,
     commentsError: String?,
     shouldShowCommentsSection: Boolean,
+    commentsFromTrakt: Boolean,
     selectedComment: TraktCommentReview?,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeClick: (Video) -> Unit,
@@ -1483,6 +1485,7 @@ private fun MetaDetailsContent(
                         comments = comments,
                         isLoading = isCommentsLoading,
                         error = commentsError,
+                        fromTrakt = commentsFromTrakt,
                         upFocusRequester = commentsUpFocusRequester,
                         onRetry = onRetryComments,
                         onCommentClick = onCommentClick
