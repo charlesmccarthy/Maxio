@@ -85,7 +85,9 @@ class WatchProgressRepositoryImpl @Inject constructor(
     )
     private val metadataMutex = Mutex()
     private val inFlightMetadataKeys = mutableSetOf<String>()
-    private val metadataHydrationLimit = 30
+    // Covers a Trakt-import-sized Continue Watching row (in-progress + next-up seeds);
+    // at 30, items past the cap never got artwork and showed blank cards on fresh devices.
+    private val metadataHydrationLimit = 80
 
     private fun triggerRemoteSync() {
         if (isSyncingFromRemote) return

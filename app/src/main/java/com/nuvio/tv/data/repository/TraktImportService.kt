@@ -85,7 +85,14 @@ class TraktImportService @Inject constructor(
 
     private suspend fun importLibrary(): Int {
         traktLibraryService.refreshNow()
-        val entries = withTimeoutOrNull(FLOW_TIMEOUT_MS) {
+        // Trakt itself has no artwork — posters arrive via async TMDB enrichment after the
+        // watchlist loads. Wait for an emission where most entries carry a poster, otherwise
+        // the imported (and cloud-synced) library ends up with blank cards on every device.
+        val entries = withTimeoutOrNull(ENRICHED_LIBRARY_TIMEOUT_MS) {
+            traktLibraryService.observeAllItems().first { items ->
+                items.isNotEmpty() && items.count { !it.poster.isNullOrBlank() } >= (items.size * 4) / 5
+            }
+        } ?: withTimeoutOrNull(FLOW_TIMEOUT_MS) {
             traktLibraryService.observeAllItems().first { it.isNotEmpty() }
         } ?: emptyList()
 
@@ -173,5 +180,6 @@ class TraktImportService @Inject constructor(
         private const val TAG = "TraktImportService"
         private const val FLOW_TIMEOUT_MS = 20_000L
         private const val SEED_TIMEOUT_MS = 15_000L
+        private const val ENRICHED_LIBRARY_TIMEOUT_MS = 90_000L
     }
 }

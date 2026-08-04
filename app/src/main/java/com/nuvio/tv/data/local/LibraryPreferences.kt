@@ -77,6 +77,39 @@ class LibraryPreferences @Inject constructor(
         return libraryItems.first()
     }
 
+    /**
+     * Fills in missing artwork on a stored item without touching any other field.
+     * Existing non-blank artwork is never overwritten — this only heals items that were
+     * saved before their TMDB artwork had loaded (e.g. a Trakt import snapshot).
+     */
+    suspend fun updateArtwork(itemId: String, itemType: String, poster: String?, background: String?) {
+        if (poster.isNullOrBlank() && background.isNullOrBlank()) return
+        store().edit { preferences ->
+            val current = preferences[libraryItemsKey] ?: return@edit
+            var changed = false
+            val updated = current.map { json ->
+                val saved = runCatching { gson.fromJson(json, SavedLibraryItem::class.java) }.getOrNull()
+                if (saved != null && saved.id == itemId && saved.type.equals(itemType, ignoreCase = true)) {
+                    val healed = saved.copy(
+                        poster = saved.poster?.takeIf { it.isNotBlank() } ?: poster,
+                        background = saved.background?.takeIf { it.isNotBlank() } ?: background
+                    )
+                    if (healed != saved) {
+                        changed = true
+                        gson.toJson(healed)
+                    } else {
+                        json
+                    }
+                } else {
+                    json
+                }
+            }.toSet()
+            if (changed) {
+                preferences[libraryItemsKey] = updated
+            }
+        }
+    }
+
     suspend fun mergeRemoteItems(remoteItems: List<SavedLibraryItem>) {
         store().edit { preferences ->
             val current = preferences[libraryItemsKey] ?: emptySet()

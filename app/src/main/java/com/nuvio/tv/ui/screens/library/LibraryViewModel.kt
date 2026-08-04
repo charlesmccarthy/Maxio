@@ -12,6 +12,7 @@ import com.nuvio.tv.data.trailer.ActiveTrailerState
 import com.nuvio.tv.data.trailer.TrailerService
 import com.nuvio.tv.domain.model.MetaPreview
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withPermit
 import com.nuvio.tv.domain.model.LibraryEntry
 import com.nuvio.tv.domain.model.LibraryListTab
 import com.nuvio.tv.domain.model.LibrarySourceMode
@@ -117,6 +118,7 @@ data class LibraryUiState(
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
+    private val libraryPreferences: com.nuvio.tv.data.local.LibraryPreferences,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
     private val trailerService: TrailerService,
     private val tmdbService: TmdbService,
@@ -226,6 +228,41 @@ class LibraryViewModel @Inject constructor(
                 logoLoadingIds.remove(itemId)
             }
         }
+    }
+
+    // Artwork self-heal: items saved before their TMDB artwork loaded (e.g. a Trakt import
+    // snapshot) display blank; fetch the missing poster/backdrop on display and persist it.
+    private val artworkAttempted = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val artworkSemaphore = kotlinx.coroutines.sync.Semaphore(3)
+
+    private fun hydrateMissingArtwork(items: List<LibraryEntry>, sourceMode: LibrarySourceMode) {
+        if (sourceMode == LibrarySourceMode.TRAKT) return
+        items.filter { it.poster.isNullOrBlank() || it.background.isNullOrBlank() }
+            .forEach { entry ->
+                val key = "${entry.type.lowercase()}:${entry.id}"
+                if (!artworkAttempted.add(key)) return@forEach
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        artworkSemaphore.withPermit {
+                            val tmdbId = runCatching { tmdbService.ensureTmdbId(entry.id, entry.type) }
+                                .getOrNull()?.toIntOrNull() ?: return@withPermit
+                            val details = if (entry.type.equals("movie", ignoreCase = true)) {
+                                tmdbApi.getMovieDetails(tmdbId, BuildConfig.TMDB_API_KEY).body()
+                            } else {
+                                tmdbApi.getTvDetails(tmdbId, BuildConfig.TMDB_API_KEY).body()
+                            } ?: return@withPermit
+                            libraryPreferences.updateArtwork(
+                                itemId = entry.id,
+                                itemType = entry.type,
+                                poster = details.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
+                                background = details.backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" }
+                            )
+                        }
+                    } catch (_: Exception) {
+                        // Attempted once this session; retried on next app start.
+                    }
+                }
+            }
     }
 
     // Trailer handoff support
@@ -456,6 +493,7 @@ class LibraryViewModel @Inject constructor(
                     listTabs = listTabs
                 )
             }.collectLatest { (sourceMode, isSyncing, items, listTabs) ->
+                hydrateMissingArtwork(items, sourceMode)
                 _uiState.update { current ->
                     val nextSelectedList = when {
                         sourceMode == LibrarySourceMode.TRAKT -> {

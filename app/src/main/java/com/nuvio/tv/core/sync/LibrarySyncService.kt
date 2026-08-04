@@ -80,6 +80,7 @@ class LibrarySyncService @Inject constructor(
                                 item.genres.forEach { genre -> add(kotlinx.serialization.json.JsonPrimitive(genre)) }
                             })
                             put("addon_base_url", item.addonBaseUrl)
+                            put("added_at", item.addedAt)
                         }
                     }
                 })
@@ -139,7 +140,8 @@ class LibrarySyncService @Inject constructor(
                     releaseInfo = entry.releaseInfo,
                     imdbRating = entry.imdbRating,
                     genres = entry.genres,
-                    addonBaseUrl = entry.addonBaseUrl
+                    addonBaseUrl = entry.addonBaseUrl,
+                    addedAt = entry.addedAt
                 )
             })
         } catch (e: Exception) {
