@@ -14,6 +14,7 @@ import com.nuvio.tv.data.remote.api.TrailerApi
 import com.nuvio.tv.data.remote.api.IntroDbApi
 import com.nuvio.tv.data.remote.api.ImdbTapframeApi
 import com.nuvio.tv.data.remote.api.MDBListApi
+import com.nuvio.tv.data.remote.api.OpenRouterApi
 import com.nuvio.tv.data.remote.api.ParentalGuideApi
 import com.nuvio.tv.data.remote.api.SeriesGraphApi
 import com.nuvio.tv.data.remote.api.TmdbApi
@@ -320,6 +321,24 @@ object NetworkModule {
     @Singleton
     fun provideMDBListApi(@Named("mdblist") retrofit: Retrofit): MDBListApi =
         retrofit.create(MDBListApi::class.java)
+
+    // --- OpenRouter API (X-Ray scene identification) ---
+
+    @Provides
+    @Singleton
+    @Named("openrouter")
+    fun provideOpenRouterRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =
+        Retrofit.Builder()
+            .baseUrl("https://openrouter.ai/api/")
+            // Vision completions can exceed the shared client's 30s read timeout.
+            .client(okHttpClient.newBuilder().readTimeout(90, TimeUnit.SECONDS).build())
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+
+    @Provides
+    @Singleton
+    fun provideOpenRouterApi(@Named("openrouter") retrofit: Retrofit): OpenRouterApi =
+        retrofit.create(OpenRouterApi::class.java)
 
     // --- SeriesGraph API ---
 

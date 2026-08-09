@@ -77,6 +77,7 @@ private enum class IntegrationSettingsSection {
     Tmdb,
     MdbList,
     AnimeSkip,
+    XRay,
     Debrid
 }
 
@@ -226,6 +227,7 @@ fun SettingsScreen(
     val integrationTmdbFocusRequester = remember { FocusRequester() }
     val integrationMdbListFocusRequester = remember { FocusRequester() }
     val integrationAnimeSkipFocusRequester = remember { FocusRequester() }
+    val integrationXRayFocusRequester = remember { FocusRequester() }
     val integrationDebridFocusRequester = remember { FocusRequester() }
     var integrationSection by remember { mutableStateOf(IntegrationSettingsSection.Hub) }
     var pendingContentFocusCategory by remember { mutableStateOf<SettingsCategory?>(null) }
@@ -413,6 +415,7 @@ fun SettingsScreen(
                             tmdbFocusRequester = integrationTmdbFocusRequester,
                             mdbListFocusRequester = integrationMdbListFocusRequester,
                             animeSkipFocusRequester = integrationAnimeSkipFocusRequester,
+                            xRayFocusRequester = integrationXRayFocusRequester,
                             debridFocusRequester = integrationDebridFocusRequester,
                             autoFocusEnabled = allowDetailAutofocus
                         )
@@ -501,6 +504,7 @@ private fun IntegrationSettingsContent(
     tmdbFocusRequester: FocusRequester,
     mdbListFocusRequester: FocusRequester,
     animeSkipFocusRequester: FocusRequester,
+    xRayFocusRequester: FocusRequester,
     debridFocusRequester: FocusRequester,
     autoFocusEnabled: Boolean
 ) {
@@ -516,6 +520,7 @@ private fun IntegrationSettingsContent(
             IntegrationSettingsSection.Tmdb -> tmdbFocusRequester
             IntegrationSettingsSection.MdbList -> mdbListFocusRequester
             IntegrationSettingsSection.AnimeSkip -> animeSkipFocusRequester
+            IntegrationSettingsSection.XRay -> xRayFocusRequester
             IntegrationSettingsSection.Debrid -> debridFocusRequester
         }
         runCatching { requester.requestFocus() }
@@ -562,6 +567,13 @@ private fun IntegrationSettingsContent(
                                 onClick = { onSelectSection(IntegrationSettingsSection.AnimeSkip) }
                             )
                         }
+                        item(key = "integration_hub_xray") {
+                            SettingsActionRow(
+                                title = stringResource(R.string.xray_settings_title),
+                                subtitle = stringResource(R.string.xray_settings_subtitle),
+                                onClick = { onSelectSection(IntegrationSettingsSection.XRay) }
+                            )
+                        }
                         item(key = "integration_hub_debrid") {
                             SettingsActionRow(
                                 title = "Debrid",
@@ -589,6 +601,12 @@ private fun IntegrationSettingsContent(
         IntegrationSettingsSection.AnimeSkip -> {
             AnimeSkipSettingsContent(
                 initialFocusRequester = animeSkipFocusRequester
+            )
+        }
+
+        IntegrationSettingsSection.XRay -> {
+            XRaySettingsContent(
+                initialFocusRequester = xRayFocusRequester
             )
         }
 

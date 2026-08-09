@@ -45,6 +45,7 @@ class PlayerViewModel @Inject constructor(
     private val tmdbMetadataService: TmdbMetadataService,
     private val subtitlePrefetchCache: com.nuvio.tv.core.stream.SubtitlePrefetchCache,
     private val playerMediaCache: com.nuvio.tv.core.player.PlayerMediaCache,
+    private val xRayService: com.nuvio.tv.data.repository.XRayService,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -69,6 +70,7 @@ class PlayerViewModel @Inject constructor(
         tmdbMetadataService = tmdbMetadataService,
         subtitlePrefetchCache = subtitlePrefetchCache,
         playerMediaCache = playerMediaCache,
+        xRayService = xRayService,
         savedStateHandle = savedStateHandle,
         scope = viewModelScope
     )

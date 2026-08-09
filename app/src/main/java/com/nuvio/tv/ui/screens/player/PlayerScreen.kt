@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -60,6 +61,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,6 +114,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerScreen(
@@ -132,6 +135,14 @@ fun PlayerScreen(
     val skipIntroFocusRequester = remember { FocusRequester() }
     var skipButtonActuallyVisible by remember { mutableStateOf(false) }
     val nextEpisodeFocusRequester = remember { FocusRequester() }
+    val coroutineScope = rememberCoroutineScope()
+    var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    val onShowXRay: () -> Unit = {
+        coroutineScope.launch {
+            val frame = playerViewRef?.let { capturePlayerFrame(it) }
+            viewModel.onEvent(PlayerEvent.OnShowXRay(frame))
+        }
+    }
     val exitPlayer: () -> Unit = {
         viewModel.stopAndRelease()
         onBackPress(uiState.currentVideoId, uiState.currentSeason, uiState.currentEpisode, uiState.streamAutoPlayMode != StreamAutoPlayMode.MANUAL)
@@ -148,6 +159,8 @@ fun PlayerScreen(
             viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay)
         } else if (uiState.showStreamInfoOverlay) {
             viewModel.onEvent(PlayerEvent.OnDismissStreamInfo)
+        } else if (uiState.showXRayOverlay) {
+            viewModel.onEvent(PlayerEvent.OnDismissXRay)
         } else if (uiState.showPauseOverlay) {
             viewModel.onEvent(PlayerEvent.OnDismissPauseOverlay)
         } else if (uiState.showMoreDialog) {
@@ -491,7 +504,10 @@ fun PlayerScreen(
         viewModel.exoPlayer?.let { player ->
             val subtitleStyle = uiState.subtitleStyle
             val resizeMode = uiState.resizeMode
-            
+
+            DisposableEffect(player) {
+                onDispose { playerViewRef = null }
+            }
             AndroidView(
                 factory = { context ->
                     PlayerView(context).apply {
@@ -499,7 +515,7 @@ fun PlayerScreen(
                         useController = false
                         keepScreenOn = false
                         setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                    }
+                    }.also { playerViewRef = it }
                 },
                 update = { playerView ->
                     // Keep device awake only while playback is active (or buffering), not when paused.
@@ -593,6 +609,22 @@ fun PlayerScreen(
                 .zIndex(2.6f)
         )
 
+        XRayOverlay(
+            visible = uiState.showXRayOverlay && uiState.error == null && !uiState.showLoadingOverlay,
+            isLoading = uiState.xRayLoading,
+            error = uiState.xRayError,
+            scene = uiState.xRayScene,
+            onClose = { viewModel.onEvent(PlayerEvent.OnDismissXRay) },
+            onPersonClick = { personId, personName ->
+                viewModel.onEvent(PlayerEvent.OnDismissXRay)
+                viewModel.pauseForSecondaryNavigation()
+                onNavigateToCastDetail(personId, personName, false)
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(2.7f)
+        )
+
         // Buffering indicator
         if (uiState.isBuffering && !uiState.showLoadingOverlay) {
             Box(
@@ -640,6 +672,7 @@ fun PlayerScreen(
                 !uiState.showLoadingOverlay &&
                 !uiState.showPauseOverlay &&
                 !uiState.showStreamInfoOverlay &&
+                !uiState.showXRayOverlay &&
                 !uiState.showEpisodesPanel &&
                 !uiState.showSourcesPanel &&
                 !uiState.showAudioOverlay &&
@@ -718,6 +751,7 @@ fun PlayerScreen(
             visible = uiState.showControls && uiState.error == null &&
                 !uiState.showLoadingOverlay && !uiState.showPauseOverlay &&
                 !uiState.showStreamInfoOverlay &&
+                !uiState.showXRayOverlay &&
                 !uiState.showSubtitleStylePanel &&
                 !uiState.showSubtitleDelayOverlay &&
                 !uiState.showEpisodesPanel &&
@@ -775,6 +809,7 @@ fun PlayerScreen(
                     )
                 },
                 onShowStreamInfo = { viewModel.onEvent(PlayerEvent.OnShowStreamInfo) },
+                onShowXRay = onShowXRay,
                 onResetHideTimer = { viewModel.scheduleHideControls(); viewModel.onUserInteraction() },
                 onHideControls = { viewModel.hideControls() },
                 onBack = { exitPlayer() },
@@ -1035,6 +1070,7 @@ private fun PlayerControlsOverlay(
     onToggleMoreActions: () -> Unit,
     onOpenInExternalPlayer: () -> Unit,
     onShowStreamInfo: () -> Unit,
+    onShowXRay: () -> Unit,
     onResetHideTimer: () -> Unit,
     onHideControls: () -> Unit,
     onBack: () -> Unit,
@@ -1339,6 +1375,16 @@ private fun PlayerControlsOverlay(
                         contentDescription = "Stream info",
                         onClick = {
                             onShowStreamInfo()
+                        },
+                        upFocusRequester = progressBarFocusRequester,
+                        onDownKey = handleDownFromControls,
+                        onFocused = onResetHideTimer
+                    )
+                    ControlButton(
+                        icon = Icons.Default.ImageSearch,
+                        contentDescription = "X-Ray",
+                        onClick = {
+                            onShowXRay()
                         },
                         upFocusRequester = progressBarFocusRequester,
                         onDownKey = handleDownFromControls,

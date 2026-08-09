@@ -131,7 +131,12 @@ data class PlayerUiState(
     val aspectRatioIndicatorText: String = "",
     // Stream info overlay
     val showStreamInfoOverlay: Boolean = false,
-    val streamInfoData: StreamInfoData? = null
+    val streamInfoData: StreamInfoData? = null,
+    // X-Ray overlay (AI scene identification)
+    val showXRayOverlay: Boolean = false,
+    val xRayLoading: Boolean = false,
+    val xRayError: String? = null,
+    val xRayScene: com.nuvio.tv.domain.model.XRaySceneInfo? = null
 )
 
 data class TrackInfo(
@@ -219,6 +224,8 @@ sealed class PlayerEvent {
     data object OnToggleAspectRatio : PlayerEvent()
     data object OnShowStreamInfo : PlayerEvent()
     data object OnDismissStreamInfo : PlayerEvent()
+    data class OnShowXRay(val frameJpegBase64: String?) : PlayerEvent()
+    data object OnDismissXRay : PlayerEvent()
 }
 
 data class ParentalWarning(

@@ -299,7 +299,7 @@ fun PlayerRuntimeController.scheduleHideControls() {
             !_uiState.value.showSpeedDialog && !_uiState.value.showMoreDialog &&
             !_uiState.value.showSubtitleDelayOverlay &&
             !_uiState.value.showEpisodesPanel && !_uiState.value.showSourcesPanel &&
-            !_uiState.value.showStreamInfoOverlay) {
+            !_uiState.value.showStreamInfoOverlay && !_uiState.value.showXRayOverlay) {
             _uiState.update { it.copy(showControls = false) }
         }
     }
@@ -390,7 +390,8 @@ internal fun PlayerRuntimeController.schedulePauseOverlay() {
         val s = _uiState.value
         val anyPanelOpen = s.showSubtitleOverlay || s.showSubtitleStylePanel ||
             s.showSpeedDialog || s.showMoreDialog || s.showEpisodesPanel ||
-            s.showSourcesPanel || s.showAudioOverlay || s.showStreamInfoOverlay
+            s.showSourcesPanel || s.showAudioOverlay || s.showStreamInfoOverlay ||
+            s.showXRayOverlay
         if (!s.isPlaying && s.pauseOverlayEnabled && s.error == null && !anyPanelOpen) {
             _uiState.update { it.copy(showPauseOverlay = true, showControls = false) }
         }
@@ -875,6 +876,70 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
         }
         PlayerEvent.OnDismissStreamInfo -> {
             _uiState.update { it.copy(showStreamInfoOverlay = false) }
+        }
+        is PlayerEvent.OnShowXRay -> handleShowXRay(event.frameJpegBase64)
+        PlayerEvent.OnDismissXRay -> {
+            xRayJob?.cancel()
+            _uiState.update { it.copy(showXRayOverlay = false, xRayLoading = false) }
+        }
+    }
+}
+
+internal fun PlayerRuntimeController.handleShowXRay(frameJpegBase64: String?) {
+    // Freeze the scene the user asked about.
+    _exoPlayer?.takeIf { it.isPlaying }?.pause()
+
+    if (frameJpegBase64 == null) {
+        _uiState.update {
+            it.copy(
+                showXRayOverlay = true,
+                xRayLoading = false,
+                xRayError = context.getString(com.nuvio.tv.R.string.xray_capture_failed),
+                xRayScene = null,
+                showControls = false
+            )
+        }
+        return
+    }
+
+    _uiState.update {
+        it.copy(
+            showXRayOverlay = true,
+            xRayLoading = true,
+            xRayError = null,
+            xRayScene = null,
+            showControls = false
+        )
+    }
+
+    val state = _uiState.value
+    xRayJob?.cancel()
+    xRayJob = scope.launch {
+        val result = xRayService.identifyScene(
+            frameJpegBase64 = frameJpegBase64,
+            title = state.contentName ?: state.title,
+            year = state.releaseYear,
+            season = state.currentSeason,
+            episode = state.currentEpisode,
+            positionMs = state.currentPosition,
+            durationMs = state.duration,
+            knownCast = state.castMembers
+        )
+        _uiState.update { current ->
+            if (!current.showXRayOverlay) return@update current
+            result.fold(
+                onSuccess = { scene ->
+                    current.copy(xRayLoading = false, xRayScene = scene, xRayError = null)
+                },
+                onFailure = { error ->
+                    val message = if (error is com.nuvio.tv.data.repository.XRayService.NotConfiguredException) {
+                        context.getString(com.nuvio.tv.R.string.xray_not_configured)
+                    } else {
+                        error.message ?: context.getString(com.nuvio.tv.R.string.xray_failed)
+                    }
+                    current.copy(xRayLoading = false, xRayError = message)
+                }
+            )
         }
     }
 }

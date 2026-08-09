@@ -55,6 +55,7 @@ class PlayerRuntimeController(
     internal val tmdbMetadataService: TmdbMetadataService,
     internal val subtitlePrefetchCache: com.nuvio.tv.core.stream.SubtitlePrefetchCache,
     internal val playerMediaCache: com.nuvio.tv.core.player.PlayerMediaCache,
+    internal val xRayService: com.nuvio.tv.data.repository.XRayService,
     savedStateHandle: SavedStateHandle,
     internal val scope: CoroutineScope
 ) {
@@ -181,6 +182,7 @@ class PlayerRuntimeController(
     internal var hideSeekOverlayJob: Job? = null
     internal var watchProgressSaveJob: Job? = null
     internal var seekProgressSyncJob: Job? = null
+    internal var xRayJob: Job? = null
     internal var frameRateProbeJob: Job? = null
     internal var frameRateProbeToken: Long = 0L
     internal var hideAspectRatioIndicatorJob: Job? = null
