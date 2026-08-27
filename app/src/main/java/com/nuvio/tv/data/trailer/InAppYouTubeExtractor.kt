@@ -6,6 +6,8 @@ import com.google.gson.Gson
 import com.nuvio.tv.BuildConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -29,6 +31,7 @@ private const val DEFAULT_USER_AGENT =
 private const val PREFERRED_SEPARATE_CLIENT = "visionos"
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
+private const val WATCH_CONFIG_TTL_MS = 30L * 60L * 1000L
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
 private val VISITOR_DATA_REGEX = Regex("\"VISITOR_DATA\":\"([^\"]+)\"")
 private val QUALITY_LABEL_REGEX = Regex("(\\d{2,4})p")
@@ -176,30 +179,53 @@ class InAppYouTubeExtractor @Inject constructor() {
         source
     }
 
+    // The innertube API key and visitorData are session-stable, not per-video; caching
+    // them skips a full watch-page download (~0.5-1s) on every extraction after the first.
+    @Volatile
+    private var cachedWatchConfig: WatchConfig? = null
+
+    @Volatile
+    private var cachedWatchConfigAtMs: Long = 0L
+
     private suspend fun extractPlaybackSourceInternal(youtubeUrl: String): TrailerPlaybackSource? {
         val videoId = extractVideoId(youtubeUrl) ?: return null
 
-        val watchUrl = "https://www.youtube.com/watch?v=$videoId&hl=en"
-        val watchResponse = performRequest(
-            url = watchUrl,
-            method = "GET",
-            headers = DEFAULT_HEADERS
-        )
-        if (!watchResponse.ok) {
-            throw IllegalStateException("Failed to fetch watch page (${watchResponse.status})")
+        val cached = cachedWatchConfig
+        val watchConfig = if (cached?.apiKey != null &&
+            System.currentTimeMillis() - cachedWatchConfigAtMs < WATCH_CONFIG_TTL_MS
+        ) {
+            cached
+        } else {
+            val watchUrl = "https://www.youtube.com/watch?v=$videoId&hl=en"
+            val watchResponse = performRequest(
+                url = watchUrl,
+                method = "GET",
+                headers = DEFAULT_HEADERS
+            )
+            if (!watchResponse.ok) {
+                throw IllegalStateException("Failed to fetch watch page (${watchResponse.status})")
+            }
+            getWatchConfig(watchResponse.body).also { fresh ->
+                if (fresh.apiKey != null) {
+                    cachedWatchConfig = fresh
+                    cachedWatchConfigAtMs = System.currentTimeMillis()
+                }
+            }
         }
-
-        val watchConfig = getWatchConfig(watchResponse.body)
         val apiKey = watchConfig.apiKey
             ?: throw IllegalStateException("Unable to extract INNERTUBE_API_KEY")
 
-        val progressive = mutableListOf<StreamCandidate>()
-        val adaptiveVideo = mutableListOf<StreamCandidate>()
-        val adaptiveAudio = mutableListOf<StreamCandidate>()
-        val manifestUrls = mutableListOf<Triple<String, Int, String>>()
+        val progressive = java.util.Collections.synchronizedList(mutableListOf<StreamCandidate>())
+        val adaptiveVideo = java.util.Collections.synchronizedList(mutableListOf<StreamCandidate>())
+        val adaptiveAudio = java.util.Collections.synchronizedList(mutableListOf<StreamCandidate>())
+        val manifestUrls = java.util.Collections.synchronizedList(mutableListOf<Triple<String, Int, String>>())
 
-        for (client in CLIENTS) {
-            try {
+        // Query all clients concurrently — sequentially this cost ~1.5s of extraction
+        // latency even when the first client had everything we needed.
+        coroutineScope {
+            CLIENTS.map { client ->
+                async {
+                    try {
                 val playerResponse = fetchPlayerResponse(
                     apiKey = apiKey,
                     videoId = videoId,
@@ -208,7 +234,7 @@ class InAppYouTubeExtractor @Inject constructor() {
                     cookieHeader = null
                 )
 
-                val streamingData = playerResponse.mapValue("streamingData") ?: continue
+                val streamingData = playerResponse.mapValue("streamingData") ?: return@async
                 val hlsManifestUrl = streamingData.stringValue("hlsManifestUrl")
                 if (!hlsManifestUrl.isNullOrBlank()) {
                     manifestUrls += Triple(client.key, client.priority, hlsManifestUrl)
@@ -290,6 +316,8 @@ class InAppYouTubeExtractor @Inject constructor() {
                     Log.w(TAG, "Client ${client.key} failed: ${error.message}")
                 }
             }
+                }
+            }.forEach { it.await() }
         }
 
         if (manifestUrls.isEmpty() && progressive.isEmpty() && adaptiveVideo.isEmpty() && adaptiveAudio.isEmpty()) {
