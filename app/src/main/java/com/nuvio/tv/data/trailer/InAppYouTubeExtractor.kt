@@ -26,7 +26,7 @@ private const val EXTRACTOR_TIMEOUT_MS = 30_000L
 private const val DEFAULT_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
-private const val PREFERRED_SEPARATE_CLIENT = "android_vr"
+private const val PREFERRED_SEPARATE_CLIENT = "visionos"
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
@@ -82,20 +82,19 @@ private val DEFAULT_HEADERS = mapOf(
 
 private val CLIENTS = listOf(
     YouTubeClient(
-        key = "android_vr",
-        id = "28",
-        version = "1.56.21",
-        userAgent = "com.google.android.apps.youtube.vr.oculus/1.56.21 " +
-            "(Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1) gzip",
+        key = "visionos",
+        id = "101",
+        version = "1.02",
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 " +
+            "(KHTML, like Gecko) Version/26.0 Safari/605.1.15",
         context = mapOf(
-            "clientName" to "ANDROID_VR",
-            "clientVersion" to "1.56.21",
-            "deviceMake" to "Oculus",
-            "deviceModel" to "Quest 3",
-            "osName" to "Android",
-            "osVersion" to "12",
+            "clientName" to "VISIONOS",
+            "clientVersion" to "1.02",
+            "deviceMake" to "Apple",
+            "deviceModel" to "RealityDevice17,1",
+            "osName" to "visionOS",
+            "osVersion" to "26.5.23O471",
             "platform" to "MOBILE",
-            "androidSdkVersion" to 32,
             "hl" to "en",
             "gl" to "US"
         ),
@@ -104,15 +103,15 @@ private val CLIENTS = listOf(
     YouTubeClient(
         key = "android",
         id = "3",
-        version = "20.10.35",
-        userAgent = "com.google.android.youtube/20.10.35 (Linux; U; Android 14; en_US) gzip",
+        version = "21.26.364",
+        userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
         context = mapOf(
             "clientName" to "ANDROID",
-            "clientVersion" to "20.10.35",
+            "clientVersion" to "21.26.364",
             "osName" to "Android",
-            "osVersion" to "14",
+            "osVersion" to "11",
             "platform" to "MOBILE",
-            "androidSdkVersion" to 34,
+            "androidSdkVersion" to 30,
             "hl" to "en",
             "gl" to "US"
         ),
@@ -121,14 +120,15 @@ private val CLIENTS = listOf(
     YouTubeClient(
         key = "ios",
         id = "5",
-        version = "20.10.1",
-        userAgent = "com.google.ios.youtube/20.10.1 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)",
+        version = "21.26.4",
+        userAgent = "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
         context = mapOf(
             "clientName" to "IOS",
-            "clientVersion" to "20.10.1",
+            "clientVersion" to "21.26.4",
+            "deviceMake" to "Apple",
             "deviceModel" to "iPhone16,2",
             "osName" to "iPhone",
-            "osVersion" to "17.4.0.21E219",
+            "osVersion" to "18.3.2.22D82",
             "platform" to "MOBILE",
             "hl" to "en",
             "gl" to "US"
@@ -335,8 +335,41 @@ class InAppYouTubeExtractor @Inject constructor() {
             bestProgressive?.url
         }
 
-        val videoUrl = resolveReachableUrl(bestVideo?.url ?: combinedUrl ?: return null)
-        val audioUrl = bestAudio?.url?.let { resolveReachableUrl(it) }
+        // YouTube 403s stream URLs from clients it no longer trusts, and which client is
+        // trusted varies per request. Verify candidates client by client and use the first
+        // one that actually serves bytes; shipping a dead URL as "success" poisons the
+        // session cache and blocks the backend fallback.
+        val videoCandidatesInOrder = buildList {
+            bestVideo?.let { add(it.client to it.url) }
+            CLIENTS.map { it.key }.forEach { clientKey ->
+                if (clientKey != bestVideo?.client) {
+                    pickBestForClient(adaptiveVideo, clientKey)?.let { add(it.client to it.url) }
+                }
+            }
+            combinedUrl?.let { add(null to it) }
+        }.distinctBy { it.second }
+        if (videoCandidatesInOrder.isEmpty()) return null
+
+        var chosenClient: String? = null
+        var chosenVideoUrl: String? = null
+        for ((clientKey, candidateUrl) in videoCandidatesInOrder) {
+            val resolved = resolveReachableUrl(candidateUrl)
+            if (!resolved.contains("googlevideo.com") || isUrlReachable(resolved)) {
+                chosenClient = clientKey
+                chosenVideoUrl = resolved
+                break
+            }
+            Log.w(TAG, "Candidate from client=${clientKey ?: "combined"} failed verification, trying next")
+        }
+        val videoUrl = chosenVideoUrl ?: run {
+            Log.w(TAG, "All stream URL candidates failed playback verification; treating extraction as failed")
+            return null
+        }
+
+        // Pair audio from the same client as the working video when possible.
+        val audioCandidate = chosenClient?.let { pickBestForClient(adaptiveAudio, it) } ?: bestAudio
+        val audioUrl = audioCandidate?.url?.let { resolveReachableUrl(it) }
+            ?.takeIf { !it.contains("googlevideo.com") || isUrlReachable(it) }
 
         if (BuildConfig.DEBUG) {
             Log.d(
@@ -652,7 +685,7 @@ class InAppYouTubeExtractor @Inject constructor() {
                 .header("Range", "bytes=0-0")
                 .headers(buildHeaders(DEFAULT_HEADERS))
                 .build()
-            probeClient.newCall(request).execute().use { val code = it.code; Log.d(TAG, "CDN probe code: ${Uri.parse(url).host} -> $code"); code == 200 }
+            probeClient.newCall(request).execute().use { val code = it.code; Log.d(TAG, "CDN probe code: ${Uri.parse(url).host} -> $code"); code in 200..399 }
         }.getOrDefault(false)
     }
 

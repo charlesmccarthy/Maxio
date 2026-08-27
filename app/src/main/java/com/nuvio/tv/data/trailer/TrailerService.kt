@@ -184,14 +184,17 @@ class TrailerService @Inject constructor(
                 return@withContext null
             }
 
-            val fallbackUrl = response.body()?.url ?: return@withContext null
+            val body = response.body()
+            val fallbackUrl = body?.url ?: return@withContext null
             if (!isValidUrl(fallbackUrl)) return@withContext null
+            val fallbackAudioUrl = body.audioUrl?.takeIf { isValidUrl(it) }
 
+            val fallbackSource = TrailerPlaybackSource(videoUrl = fallbackUrl, audioUrl = fallbackAudioUrl)
             if (!youtubeKey.isNullOrBlank()) {
-                youtubeSourceCache[youtubeKey] = TrailerPlaybackSource(videoUrl = fallbackUrl)
+                youtubeSourceCache[youtubeKey] = fallbackSource
             }
-            Log.d(TAG, "Using backend fallback source for ${summarizeUrl(youtubeUrl)}")
-            TrailerPlaybackSource(videoUrl = fallbackUrl)
+            Log.d(TAG, "Using backend fallback source for ${summarizeUrl(youtubeUrl)} (audioPresent=${fallbackAudioUrl != null})")
+            fallbackSource
         } catch (e: Exception) {
             Log.e(TAG, "Error getting trailer from YouTube: ${e.message}", e)
             null

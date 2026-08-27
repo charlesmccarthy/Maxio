@@ -19,5 +19,6 @@ interface TrailerApi {
 @JsonClass(generateAdapter = true)
 data class TrailerResponse(
     @Json(name = "url") val url: String? = null,
+    @Json(name = "audio_url") val audioUrl: String? = null,
     @Json(name = "error") val error: String? = null
 )
