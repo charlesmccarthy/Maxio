@@ -27,7 +27,11 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import com.nuvio.tv.core.auth.AuthManager
+import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.sync.AddonSyncService
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 class AddonRepositoryImpl @Inject constructor(
@@ -35,6 +39,7 @@ class AddonRepositoryImpl @Inject constructor(
     private val preferences: AddonPreferences,
     private val addonSyncService: AddonSyncService,
     private val authManager: AuthManager,
+    private val profileManager: ProfileManager,
     @ApplicationContext private val context: Context
 ) : AddonRepository {
 
@@ -45,6 +50,8 @@ class AddonRepositoryImpl @Inject constructor(
         private const val LEGACY_MANIFEST_CACHE_KEY = "manifests"
         private const val MANIFEST_SUFFIX = "/manifest.json"
         private const val MANIFEST_CACHE_TTL_MS = 6 * 60 * 60 * 1000L 
+        private const val SYNC_STATE_PREFS = "addon_sync_state"
+        private const val PENDING_PUSH_KEY_PREFIX = "pending_push_p"
     }
 
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -62,21 +69,49 @@ class AddonRepositoryImpl @Inject constructor(
 
     private fun normalizeUrl(url: String): String = canonicalizeUrl(url).lowercase()
 
-    private fun triggerRemoteSync() {
-        if (isSyncingFromRemote) {
-            Log.d(TAG, "triggerRemoteSync: skipped (syncing from remote)")
-            return
+    // Local addon edits that haven't reached the server yet. A remote pull treats the
+    // server list as the source of truth and drops anything missing from it, so while an
+    // edit is still unpushed (debounce window, failed push, app killed) the pull has to
+    // push first instead of reconciling, otherwise a freshly installed addon disappears.
+    private val localEditMutex = Mutex()
+    private val localEditSeq = AtomicLong(0)
+    private val syncStatePrefs by lazy {
+        context.getSharedPreferences(SYNC_STATE_PREFS, Context.MODE_PRIVATE)
+    }
+
+    private fun pendingPushKey(): String =
+        PENDING_PUSH_KEY_PREFIX + profileManager.activeProfileId.value
+
+    private fun hasPendingPush(): Boolean =
+        syncStatePrefs.getBoolean(pendingPushKey(), false)
+
+    private fun markPendingPush() {
+        localEditSeq.incrementAndGet()
+        syncStatePrefs.edit().putBoolean(pendingPushKey(), true).apply()
+    }
+
+    private suspend fun pushPendingEdits(): Boolean {
+        val key = pendingPushKey()
+        val seq = localEditSeq.get()
+        val result = addonSyncService.pushToRemote()
+        Log.d(TAG, "pushPendingEdits: result=${result.isSuccess} ${result.exceptionOrNull()?.message ?: ""}")
+        if (result.isSuccess && localEditSeq.get() == seq) {
+            syncStatePrefs.edit().remove(key).apply()
         }
+        return result.isSuccess
+    }
+
+    private fun triggerRemoteSync() {
         if (!authManager.isAuthenticated) {
             Log.d(TAG, "triggerRemoteSync: skipped (not authenticated, state=${authManager.authState.value})")
             return
         }
+        markPendingPush()
         Log.d(TAG, "triggerRemoteSync: scheduling push in 500ms")
         syncJob?.cancel()
         syncJob = syncScope.launch {
             delay(500)
-            val result = addonSyncService.pushToRemote()
-            Log.d(TAG, "triggerRemoteSync: push result=${result.isSuccess} ${result.exceptionOrNull()?.message ?: ""}")
+            pushPendingEdits()
         }
     }
 
@@ -189,25 +224,47 @@ class AddonRepositoryImpl @Inject constructor(
 
     override suspend fun addAddon(url: String) {
         val cleanUrl = canonicalizeUrl(url)
-        preferences.addAddon(cleanUrl)
-        triggerRemoteSync()
+        localEditMutex.withLock {
+            preferences.addAddon(cleanUrl)
+            triggerRemoteSync()
+        }
     }
 
     override suspend fun removeAddon(url: String) {
         val cleanUrl = canonicalizeUrl(url)
         manifestCache.remove(cleanUrl)
-        preferences.removeAddon(cleanUrl)
-        triggerRemoteSync()
+        localEditMutex.withLock {
+            preferences.removeAddon(cleanUrl)
+            triggerRemoteSync()
+        }
     }
 
     override suspend fun setAddonOrder(urls: List<String>) {
-        preferences.setAddonOrder(urls)
-        triggerRemoteSync()
+        localEditMutex.withLock {
+            preferences.setAddonOrder(urls)
+            triggerRemoteSync()
+        }
     }
 
     suspend fun reconcileWithRemoteAddonUrls(
         remoteUrls: List<String>,
         removeMissingLocal: Boolean = true
+    ) {
+        if (hasPendingPush()) {
+            Log.d(TAG, "reconcileWithRemoteAddonUrls: local edits not pushed yet, pushing instead of reconciling")
+            pushPendingEdits()
+            return
+        }
+        localEditMutex.withLock {
+            // An edit may have landed while the remote list was being fetched.
+            if (hasPendingPush()) return
+            applyRemoteAddonUrls(remoteUrls, removeMissingLocal)
+        }
+    }
+
+    private suspend fun applyRemoteAddonUrls(
+        remoteUrls: List<String>,
+        removeMissingLocal: Boolean
     ) {
         val normalizedRemote = remoteUrls
             .map { canonicalizeUrl(it) }

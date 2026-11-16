@@ -88,7 +88,7 @@ class PluginDataStore @Inject constructor(
     }
 
     suspend fun saveRepositories(repos: List<PluginRepository>) {
-        if (profileManager.activeProfile?.usesPrimaryPlugins == true) return
+        if (profileManager.activeProfile?.let { !it.isPrimary && it.usesPrimaryPlugins } == true) return
         val json = moshi.adapter<List<PluginRepository>>(repoListType).toJson(repos)
         store().edit { prefs ->
             prefs[repositoriesKey] = json
@@ -96,7 +96,7 @@ class PluginDataStore @Inject constructor(
     }
 
     suspend fun addRepository(repo: PluginRepository) {
-        if (profileManager.activeProfile?.usesPrimaryPlugins == true) return
+        if (profileManager.activeProfile?.let { !it.isPrimary && it.usesPrimaryPlugins } == true) return
         val current = repositories.first().toMutableList()
         current.removeAll { it.id == repo.id }
         current.add(repo)
@@ -104,7 +104,7 @@ class PluginDataStore @Inject constructor(
     }
 
     suspend fun removeRepository(repoId: String) {
-        if (profileManager.activeProfile?.usesPrimaryPlugins == true) return
+        if (profileManager.activeProfile?.let { !it.isPrimary && it.usesPrimaryPlugins } == true) return
         val current = repositories.first().toMutableList()
         current.removeAll { it.id == repoId }
         saveRepositories(current)
@@ -136,7 +136,7 @@ class PluginDataStore @Inject constructor(
     }
 
     suspend fun saveScrapers(scrapers: List<ScraperInfo>) {
-        if (profileManager.activeProfile?.usesPrimaryPlugins == true) return
+        if (profileManager.activeProfile?.let { !it.isPrimary && it.usesPrimaryPlugins } == true) return
         val json = moshi.adapter<List<ScraperInfo>>(scraperListType).toJson(scrapers)
         store().edit { prefs ->
             prefs[scrapersKey] = json
@@ -163,7 +163,7 @@ class PluginDataStore @Inject constructor(
     }
 
     suspend fun setPluginsEnabled(enabled: Boolean) {
-        if (profileManager.activeProfile?.usesPrimaryPlugins == true) return
+        if (profileManager.activeProfile?.let { !it.isPrimary && it.usesPrimaryPlugins } == true) return
         store().edit { prefs ->
             prefs[pluginsEnabledKey] = enabled
         }
