@@ -179,6 +179,9 @@ class MainActivity : ComponentActivity() {
     lateinit var profileSettingsSyncService: ProfileSettingsSyncService
 
     @Inject
+    lateinit var movieGoatedLikesSyncService: com.nuvio.tv.core.sync.MovieGoatedLikesSyncService
+
+    @Inject
     lateinit var profileSyncService: ProfileSyncService
 
     @Inject

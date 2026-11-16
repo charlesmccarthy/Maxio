@@ -37,6 +37,12 @@ class LikedMediaDataStore @Inject constructor(
             }
         }
 
+    /** Minimal view of a profile's liked list, for sharing likes with other services. */
+    fun likedEntries(profileId: Int): Flow<List<LikedEntry>> =
+        factory.get(profileId, FEATURE).data.map { prefs ->
+            parse(prefs[likedItemsKey]).map { LikedEntry(it.id, it.rawType, it.imdbId, it.likedAt) }
+        }
+
     suspend fun toggle(item: MetaPreview): Boolean {
         var added = false
         val store = factory.get(profileManager.activeProfileId.value, FEATURE)
@@ -64,6 +70,13 @@ class LikedMediaDataStore @Inject constructor(
             .getOrDefault(emptyList())
     }
 }
+
+data class LikedEntry(
+    val id: String,
+    val type: String,
+    val imdbId: String?,
+    val likedAt: Long
+)
 
 @JsonClass(generateAdapter = true)
 internal data class LikedMediaJson(
